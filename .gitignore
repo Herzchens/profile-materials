@@ -19,6 +19,9 @@ target
 !.env.example
 *.log
 
+# Runtime state
+/state/
+
 # RustRover
 # JetBrains specific template is maintained in a separate JetBrains.gitignore.
 #.idea/

@@ -1,21 +1,21 @@
-use std::{
-    error::Error,
-    fmt,
-    sync::Arc,
-    time::{Instant, SystemTime, SystemTimeError, UNIX_EPOCH},
-};
+use std::{error::Error, fmt, path::PathBuf, sync::Arc, time::Instant};
 
 use twilight_gateway::{
     Event, EventTypeFlags, Intents, Shard, ShardId, ShardState, StreamExt as _,
 };
 
 use crate::{
+    clock::{self, ClockError},
     config::DiscordConfig,
     discord::normalize::{is_target, normalize_presence},
-    state::{PresenceStore, PublishError, PublishOutcome},
+    state::{PresenceStore, PublishError, PublishOutcome, lkg},
 };
 
-pub async fn run(config: DiscordConfig, store: Arc<PresenceStore>) -> Result<(), GatewayError> {
+pub async fn run(
+    config: DiscordConfig,
+    store: Arc<PresenceStore>,
+    lkg_path: PathBuf,
+) -> Result<(), GatewayError> {
     let mut shard = Shard::new(
         ShardId::ONE,
         config.bot_token,
@@ -26,7 +26,7 @@ pub async fn run(config: DiscordConfig, store: Arc<PresenceStore>) -> Result<(),
     tracing::info!(gateway_state = ?previous_state, "Discord Gateway collector starting");
 
     loop {
-        let item = shard.next_event(EventTypeFlags::PRESENCE_UPDATE).await;
+        let item = shard.next_event(EventTypeFlags::all()).await;
         let current_state = shard.state();
 
         if current_state != previous_state {
@@ -47,38 +47,54 @@ pub async fn run(config: DiscordConfig, store: Arc<PresenceStore>) -> Result<(),
         };
 
         match item {
-            Ok(Event::PresenceUpdate(presence)) => {
-                let received_at = Instant::now();
+            Ok(event) => {
+                store.mark_gateway_live()?;
 
-                if !is_target(&presence, config.target_user_id, config.target_guild_id) {
-                    continue;
-                }
+                if let Event::PresenceUpdate(presence) = event {
+                    let received_at = Instant::now();
 
-                let data = normalize_presence(&presence);
-                let observed_at_unix_ms = unix_time_millis()?;
-                let activity_count = data.activities.len();
-                let status = data.status;
+                    if !is_target(&presence, config.target_user_id, config.target_guild_id) {
+                        continue;
+                    }
 
-                match store.publish(data, observed_at_unix_ms)? {
-                    PublishOutcome::Changed { revision } => tracing::info!(
-                        revision,
-                        status = ?status,
-                        activity_count,
-                        processing_latency_us = received_at.elapsed().as_micros(),
-                        "target presence published"
-                    ),
-                    PublishOutcome::Unchanged { revision } => tracing::debug!(
-                        revision,
-                        processing_latency_us = received_at.elapsed().as_micros(),
-                        "duplicate target presence ignored"
-                    ),
+                    let data = normalize_presence(&presence);
+                    let observed_at_unix_ms = clock::unix_time_millis()?;
+                    let activity_count = data.activities.len();
+                    let status = data.status;
+
+                    match store.publish(data, observed_at_unix_ms)? {
+                        PublishOutcome::Changed { revision } => tracing::info!(
+                            revision,
+                            status = ?status,
+                            activity_count,
+                            processing_latency_us = received_at.elapsed().as_micros(),
+                            "target presence published"
+                        ),
+                        PublishOutcome::Unchanged { revision } => tracing::debug!(
+                            revision,
+                            processing_latency_us = received_at.elapsed().as_micros(),
+                            "duplicate target presence refreshed"
+                        ),
+                    }
+
+                    if let Some((snapshot, validated_at_unix_ms)) = store.persistence_snapshot()
+                        && let Err(error) =
+                            lkg::save(&lkg_path, &snapshot, validated_at_unix_ms).await
+                    {
+                        tracing::error!(
+                            path = %lkg_path.display(),
+                            error = %error,
+                            "failed to persist presence LKG"
+                        );
+                    }
                 }
             }
-            Ok(_) => {}
             Err(_) => {
+                let now_unix_ms = clock::unix_time_millis()?;
+                store.mark_gateway_degraded(now_unix_ms)?;
                 tracing::warn!(
                     gateway_state = ?shard.state(),
-                    "Discord Gateway receive error; payload and credentials intentionally omitted"
+                    "Discord Gateway receive error; retaining last-known-good presence"
                 );
             }
         }
@@ -89,37 +105,28 @@ pub async fn run(config: DiscordConfig, store: Arc<PresenceStore>) -> Result<(),
     }
 }
 
-fn unix_time_millis() -> Result<u64, GatewayError> {
-    let elapsed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(GatewayError::Clock)?;
-
-    u64::try_from(elapsed.as_millis()).map_err(|_| GatewayError::TimestampOverflow)
-}
-
 #[derive(Debug)]
 pub enum GatewayError {
-    Clock(SystemTimeError),
+    Clock(ClockError),
     FatallyClosed,
     Publish(PublishError),
     StreamEnded,
-    TimestampOverflow,
 }
 
 impl fmt::Display for GatewayError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Clock(_) => formatter.write_str("system clock is before the Unix epoch"),
+            Self::Clock(error) => write!(formatter, "Discord Gateway clock error: {error}"),
             Self::FatallyClosed => formatter
                 .write_str("Discord Gateway closed fatally; verify token and privileged intents"),
             Self::Publish(error) => {
-                write!(formatter, "failed to publish presence snapshot: {error}")
+                write!(
+                    formatter,
+                    "failed to update presence runtime state: {error}"
+                )
             }
             Self::StreamEnded => {
                 formatter.write_str("Discord Gateway event stream ended unexpectedly")
-            }
-            Self::TimestampOverflow => {
-                formatter.write_str("current Unix timestamp does not fit in u64 milliseconds")
             }
         }
     }
@@ -130,8 +137,14 @@ impl Error for GatewayError {
         match self {
             Self::Clock(error) => Some(error),
             Self::Publish(error) => Some(error),
-            Self::FatallyClosed | Self::StreamEnded | Self::TimestampOverflow => None,
+            Self::FatallyClosed | Self::StreamEnded => None,
         }
+    }
+}
+
+impl From<ClockError> for GatewayError {
+    fn from(error: ClockError) -> Self {
+        Self::Clock(error)
     }
 }
 
