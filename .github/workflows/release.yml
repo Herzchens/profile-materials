@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  linux-x86_64:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Stage release files
+        run: |
+          mkdir -p dist
+          install -m 0755 target/release/profile-service dist/profile-service-linux-x86_64
+          cd dist
+          sha256sum profile-service-linux-x86_64 > profile-service-linux-x86_64.sha256
+          sha256sum -c profile-service-linux-x86_64.sha256
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            dist/profile-service-linux-x86_64 \
+            dist/profile-service-linux-x86_64.sha256 \
+            --verify-tag \
+            --generate-notes \
+            --title "$GITHUB_REF_NAME"

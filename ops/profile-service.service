@@ -1,0 +1,36 @@
+[Unit]
+Description=ItzHerzchen profile service
+Wants=network-online.target tailscaled.service
+After=network-online.target tailscaled.service
+
+[Service]
+Type=simple
+User=profile-service
+Group=profile-service
+WorkingDirectory=/var/lib/profile-service
+EnvironmentFile=/etc/profile-service/profile-service.env
+ExecStart=/opt/profile-service/current/profile-service
+Restart=always
+RestartSec=3s
+TimeoutStopSec=20s
+KillSignal=SIGTERM
+
+StateDirectory=profile-service
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/var/lib/profile-service
+
+[Install]
+WantedBy=multi-user.target

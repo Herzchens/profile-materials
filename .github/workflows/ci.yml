@@ -26,3 +26,6 @@ jobs:
 
       - name: Test
         run: cargo test --locked --all-targets --all-features
+
+      - name: Deployment script syntax
+        run: bash -n ops/install-systemd.sh ops/deploy-release.sh
