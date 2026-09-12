@@ -5,6 +5,7 @@ mod discord;
 mod http;
 mod presentation;
 mod state;
+mod svg;
 
 use std::{error::Error, io, sync::Arc};
 

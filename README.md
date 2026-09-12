@@ -4,6 +4,8 @@ Source for the ItzHerzchen profile service and profile assets.
 
 The service reads Discord presence through an official bot, keeps the last known presence across restarts, streams changes over SSE, and exposes health endpoints for deployment. Discord activity artwork is resolved into usable image URLs with deterministic fallbacks. Linked Spotify activity is read directly from Discord, so no separate Spotify account, OAuth flow, token, or polling service is required.
 
+It also exposes simple SVG views for the current presence and Spotify activity. These are intentionally basic renderer outputs; the final profile artwork is built separately later.
+
 ## Requirements
 
 - Rust toolchain from `rust-toolchain.toml`
@@ -42,6 +44,9 @@ Available endpoints:
 ```text
 GET /v1/public/presence
 GET /v1/live
+GET /v1/svg/hero-test.svg
+GET /v1/svg/presence.svg
+GET /v1/svg/spotify.svg?layout=mini|compact|wide
 GET /debug/live
 GET /health/live
 GET /health/ready
@@ -51,6 +56,10 @@ GET /health/ready
 
 `/v1/live` streams the same public presence representation over server-sent events. `/debug/live` is a minimal browser view of that stream.
 
-Before the first valid target presence event, the public endpoint reports `availability: "unknown"`. A Gateway transport failure does not fabricate an offline user state. The service keeps the last-known-good snapshot during the grace window, marks it stale after the configured stale threshold, and returns a neutral `availability: "unavailable"` view after the configured unavailable threshold. A real target `PRESENCE_UPDATE` restores fresh state.
+The SVG endpoints render directly from the same immutable state. The presence card keeps all distinct current activities after same-name duplicate selection, while the Spotify endpoint has `mini`, `compact`, and `wide` layouts. `hero-test.svg` is a plain diagnostic render with visible revisions for cache experiments, not the final profile hero.
+
+SVG responses use revision-based render caching and an `ETag`. They ask clients to revalidate instead of treating an unchanged card as permanently fresh. A matching `If-None-Match` request receives `304 Not Modified`.
+
+Before the first valid target presence event, the public endpoint and SVG views use a neutral waiting state. A Gateway transport failure does not fabricate an offline user state. The service keeps the last-known-good snapshot during the grace window, marks it stale after the configured stale threshold, and switches to a neutral unavailable view after the configured unavailable threshold. A real target `PRESENCE_UPDATE` restores fresh state.
 
 The LKG file contains only the normalized presence snapshot and validation timestamp. Credentials and Discord session data are not persisted there.

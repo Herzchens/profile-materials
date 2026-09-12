@@ -2,16 +2,19 @@ use std::{convert::Infallible, io, net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
     Json, Router,
-    extract::State,
-    http::StatusCode,
+    extract::{Query, State},
+    http::{
+        HeaderMap, HeaderValue, StatusCode,
+        header::{CACHE_CONTROL, CONTENT_TYPE, ETAG, IF_NONE_MATCH},
+    },
     response::{
-        Html, IntoResponse,
+        Html, IntoResponse, Response,
         sse::{Event, KeepAlive, Sse},
     },
     routing::get,
 };
 use futures_util::stream::{self, Stream};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     presentation::{
@@ -19,6 +22,7 @@ use crate::{
         presence_is_stale,
     },
     state::{GatewayStatus, PresenceState, PresenceStore},
+    svg::{SpotifyLayout, SvgDocument, SvgRenderer},
 };
 
 const DEBUG_LIVE_HTML: &str = r#"<!doctype html>
@@ -52,31 +56,44 @@ const DEBUG_LIVE_HTML: &str = r#"<!doctype html>
 </html>
 "#;
 
+#[derive(Clone)]
+struct HttpState {
+    renderer: Arc<SvgRenderer>,
+    store: Arc<PresenceStore>,
+}
+
 pub async fn serve(bind_addr: SocketAddr, store: Arc<PresenceStore>) -> io::Result<()> {
+    let state = HttpState {
+        renderer: Arc::new(SvgRenderer::default()),
+        store,
+    };
     let app = Router::new()
         .route("/v1/public/presence", get(public_presence))
         .route("/v1/live", get(live))
+        .route("/v1/svg/hero-test.svg", get(hero_test_svg))
+        .route("/v1/svg/presence.svg", get(presence_svg))
+        .route("/v1/svg/spotify.svg", get(spotify_svg))
         .route("/debug/live", get(debug_live))
         .route("/health/live", get(health_live))
         .route("/health/ready", get(health_ready))
-        .with_state(store);
+        .with_state(state);
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
 
     tracing::info!(%bind_addr, "HTTP listener ready");
     axum::serve(listener, app).await
 }
 
-async fn public_presence(State(store): State<Arc<PresenceStore>>) -> Json<PublicPresence> {
-    let runtime = store.load();
+async fn public_presence(State(state): State<HttpState>) -> Json<PublicPresence> {
+    let runtime = state.store.load();
     Json(build_public_presence(runtime.as_ref()))
 }
 
 async fn live(
-    State(store): State<Arc<PresenceStore>>,
+    State(state): State<HttpState>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let receiver = store.subscribe();
+    let receiver = state.store.subscribe();
     let event_stream = stream::unfold(
-        (store, receiver, true, None::<u64>),
+        (state.store, receiver, true, None::<u64>),
         |(store, mut receiver, mut initial, mut last_sent_revision)| async move {
             loop {
                 if !initial && receiver.changed().await.is_err() {
@@ -116,6 +133,86 @@ async fn live(
     )
 }
 
+async fn hero_test_svg(State(state): State<HttpState>, headers: HeaderMap) -> Response {
+    let runtime = state.store.load();
+    svg_response(state.renderer.render_hero_test(runtime.as_ref()), &headers)
+}
+
+async fn presence_svg(State(state): State<HttpState>, headers: HeaderMap) -> Response {
+    let runtime = state.store.load();
+    svg_response(state.renderer.render_presence(runtime.as_ref()), &headers)
+}
+
+#[derive(Debug, Deserialize)]
+struct SpotifySvgQuery {
+    layout: Option<String>,
+}
+
+async fn spotify_svg(
+    State(state): State<HttpState>,
+    Query(query): Query<SpotifySvgQuery>,
+    headers: HeaderMap,
+) -> Response {
+    let layout = match query.layout.as_deref() {
+        None => SpotifyLayout::Compact,
+        Some(value) => match SpotifyLayout::parse(value) {
+            Some(layout) => layout,
+            None => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    "layout must be one of: mini, compact, wide",
+                )
+                    .into_response();
+            }
+        },
+    };
+    let runtime = state.store.load();
+    svg_response(
+        state.renderer.render_spotify(runtime.as_ref(), layout),
+        &headers,
+    )
+}
+
+fn svg_response(document: Arc<SvgDocument>, request_headers: &HeaderMap) -> Response {
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(
+        CACHE_CONTROL,
+        HeaderValue::from_static("no-cache, max-age=0, must-revalidate"),
+    );
+    response_headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("image/svg+xml; charset=utf-8"),
+    );
+    if let Ok(etag) = HeaderValue::from_str(document.etag()) {
+        response_headers.insert(ETAG, etag);
+    }
+    if let Ok(revision) = HeaderValue::from_str(&document.stream_revision().to_string()) {
+        response_headers.insert("x-profile-stream-revision", revision);
+    }
+
+    if etag_matches(request_headers, document.etag()) {
+        return (StatusCode::NOT_MODIFIED, response_headers, "").into_response();
+    }
+
+    (response_headers, document.body().to_owned()).into_response()
+}
+
+fn etag_matches(headers: &HeaderMap, current_etag: &str) -> bool {
+    headers
+        .get_all(IF_NONE_MATCH)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','))
+        .map(str::trim)
+        .any(|candidate| {
+            candidate == "*" || normalize_etag(candidate) == normalize_etag(current_etag)
+        })
+}
+
+fn normalize_etag(value: &str) -> &str {
+    value.strip_prefix("W/").unwrap_or(value)
+}
+
 async fn debug_live() -> Html<&'static str> {
     Html(DEBUG_LIVE_HTML)
 }
@@ -124,8 +221,8 @@ async fn health_live() -> Json<LiveHealth> {
     Json(LiveHealth { status: "live" })
 }
 
-async fn health_ready(State(store): State<Arc<PresenceStore>>) -> impl IntoResponse {
-    let runtime = store.load();
+async fn health_ready(State(state): State<HttpState>) -> impl IntoResponse {
+    let runtime = state.store.load();
     let ready = runtime.gateway_status == GatewayStatus::Live
         || matches!(runtime.presence, PresenceState::Known(_));
     let status_code = if ready {
@@ -156,4 +253,23 @@ struct ReadyHealth {
     presence_availability: &'static str,
     stale: bool,
     last_target_event_unix_ms: Option<u64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::{HeaderMap, HeaderValue, header::IF_NONE_MATCH};
+
+    use super::etag_matches;
+
+    #[test]
+    fn if_none_match_accepts_strong_weak_and_list_matches() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            IF_NONE_MATCH,
+            HeaderValue::from_static("\"other\", W/\"profile-svg-v1-presence-8\""),
+        );
+
+        assert!(etag_matches(&headers, "\"profile-svg-v1-presence-8\""));
+        assert!(!etag_matches(&headers, "\"profile-svg-v1-presence-9\""));
+    }
 }
