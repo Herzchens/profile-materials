@@ -60,6 +60,10 @@ The SVG endpoints render directly from the same immutable state. The presence ca
 
 SVG responses use revision-based render caching and an `ETag`. They ask clients to revalidate instead of treating an unchanged card as permanently fresh. A matching `If-None-Match` request receives `304 Not Modified`.
 
+The dynamic SVG cards can be embedded through GitHub Camo. Remote Discord and Spotify raster artwork is fetched from allow-listed origins and embedded into the SVG, so the rendered card does not depend on nested external image requests. If artwork cannot be embedded, the renderer uses its deterministic fallback instead of emitting the remote image URL.
+
+GitHub controls Camo caching, so cards embedded in a README should be treated as best-effort near-live views rather than a realtime channel. In the current deployment, an observed presence revision change became visible through the same Camo URL about two seconds after the origin changed; refresh timing is not guaranteed.
+
 Before the first valid target presence event, the public endpoint and SVG views use a neutral waiting state. A Gateway transport failure does not fabricate an offline user state. The service keeps the last-known-good snapshot during the grace window, marks it stale after the configured stale threshold, and switches to a neutral unavailable view after the configured unavailable threshold. A real target `PRESENCE_UPDATE` restores fresh state.
 
 The LKG file contains only the normalized presence snapshot and validation timestamp. Credentials and Discord session data are not persisted there.

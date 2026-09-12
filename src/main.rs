@@ -1,4 +1,5 @@
 mod activity;
+mod artwork_embed;
 mod clock;
 mod config;
 mod discord;

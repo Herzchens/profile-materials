@@ -64,7 +64,7 @@ struct HttpState {
 
 pub async fn serve(bind_addr: SocketAddr, store: Arc<PresenceStore>) -> io::Result<()> {
     let state = HttpState {
-        renderer: Arc::new(SvgRenderer::default()),
+        renderer: Arc::new(SvgRenderer::new().map_err(io::Error::other)?),
         store,
     };
     let app = Router::new()
@@ -140,7 +140,10 @@ async fn hero_test_svg(State(state): State<HttpState>, headers: HeaderMap) -> Re
 
 async fn presence_svg(State(state): State<HttpState>, headers: HeaderMap) -> Response {
     let runtime = state.store.load();
-    svg_response(state.renderer.render_presence(runtime.as_ref()), &headers)
+    svg_response(
+        state.renderer.render_presence(runtime.as_ref()).await,
+        &headers,
+    )
 }
 
 #[derive(Debug, Deserialize)]
@@ -168,7 +171,10 @@ async fn spotify_svg(
     };
     let runtime = state.store.load();
     svg_response(
-        state.renderer.render_spotify(runtime.as_ref(), layout),
+        state
+            .renderer
+            .render_spotify(runtime.as_ref(), layout)
+            .await,
         &headers,
     )
 }

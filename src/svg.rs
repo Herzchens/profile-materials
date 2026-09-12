@@ -5,13 +5,14 @@ use std::{
 
 use crate::{
     activity::{ResolvedArtwork, SpotifyActivity, resolve_artwork, spotify_activity},
+    artwork_embed::{ArtworkEmbedder, EmbeddedArtworkBatch},
     state::{
         ActivityKind, ActivitySnapshot, PresenceFreshness, PresenceState, PresenceStatus,
         RuntimeState,
     },
 };
 
-const RENDERER_REVISION: u8 = 1;
+const RENDERER_REVISION: u8 = 2;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SpotifyLayout {
@@ -77,29 +78,102 @@ impl SvgDocument {
     }
 }
 
-#[derive(Default)]
 pub struct SvgRenderer {
+    artwork: ArtworkEmbedder,
     cache: Mutex<HashMap<SvgVariant, Arc<SvgDocument>>>,
 }
 
 impl SvgRenderer {
+    pub fn new() -> Result<Self, reqwest::Error> {
+        Ok(Self {
+            artwork: ArtworkEmbedder::new()?,
+            cache: Mutex::new(HashMap::new()),
+        })
+    }
+
     pub fn render_hero_test(&self, runtime: &RuntimeState) -> Arc<SvgDocument> {
-        self.render(runtime, SvgVariant::HeroTest)
+        if let Some(document) = self.cached(runtime, SvgVariant::HeroTest) {
+            return document;
+        }
+
+        self.finish_render(
+            runtime,
+            SvgVariant::HeroTest,
+            &EmbeddedArtworkBatch::default(),
+        )
     }
 
-    pub fn render_presence(&self, runtime: &RuntimeState) -> Arc<SvgDocument> {
-        self.render(runtime, SvgVariant::Presence)
+    pub async fn render_presence(&self, runtime: &RuntimeState) -> Arc<SvgDocument> {
+        if let Some(document) = self.cached(runtime, SvgVariant::Presence) {
+            return document;
+        }
+
+        let urls = presence_artwork_urls(runtime);
+        let artwork = self.artwork.embed_all(&urls).await;
+        self.finish_render(runtime, SvgVariant::Presence, &artwork)
     }
 
-    pub fn render_spotify(
+    pub async fn render_spotify(
         &self,
         runtime: &RuntimeState,
         layout: SpotifyLayout,
     ) -> Arc<SvgDocument> {
-        self.render(runtime, SvgVariant::Spotify(layout))
+        let variant = SvgVariant::Spotify(layout);
+        if let Some(document) = self.cached(runtime, variant) {
+            return document;
+        }
+
+        let urls = spotify_artwork_urls(runtime);
+        let artwork = self.artwork.embed_all(&urls).await;
+        self.finish_render(runtime, variant, &artwork)
     }
 
-    fn render(&self, runtime: &RuntimeState, variant: SvgVariant) -> Arc<SvgDocument> {
+    fn cached(&self, runtime: &RuntimeState, variant: SvgVariant) -> Option<Arc<SvgDocument>> {
+        let cache = match self.cache.lock() {
+            Ok(cache) => cache,
+            Err(poisoned) => {
+                tracing::warn!("SVG render cache mutex was poisoned; recovering cached entries");
+                poisoned.into_inner()
+            }
+        };
+
+        cache.get(&variant).and_then(|document| {
+            (document.stream_revision == runtime.stream_revision).then(|| Arc::clone(document))
+        })
+    }
+
+    fn finish_render(
+        &self,
+        runtime: &RuntimeState,
+        variant: SvgVariant,
+        artwork: &EmbeddedArtworkBatch,
+    ) -> Arc<SvgDocument> {
+        let body = match variant {
+            SvgVariant::HeroTest => render_hero_test(runtime),
+            SvgVariant::Presence => render_presence_card(runtime, artwork),
+            SvgVariant::Spotify(layout) => render_spotify_card(runtime, layout, artwork),
+        };
+
+        let artwork_state = if artwork.complete() {
+            "full"
+        } else {
+            "partial"
+        };
+
+        let document = Arc::new(SvgDocument {
+            body,
+            etag: format!(
+                "\"profile-svg-v{RENDERER_REVISION}-{}-{}-{artwork_state}\"",
+                variant.cache_key(),
+                runtime.stream_revision
+            ),
+            stream_revision: runtime.stream_revision,
+        });
+
+        if !artwork.complete() {
+            return document;
+        }
+
         let mut cache = match self.cache.lock() {
             Ok(cache) => cache,
             Err(poisoned) => {
@@ -108,26 +182,11 @@ impl SvgRenderer {
             }
         };
 
-        if let Some(document) = cache.get(&variant)
-            && document.stream_revision == runtime.stream_revision
+        if let Some(existing) = cache.get(&variant)
+            && existing.stream_revision == runtime.stream_revision
         {
-            return Arc::clone(document);
+            return Arc::clone(existing);
         }
-
-        let body = match variant {
-            SvgVariant::HeroTest => render_hero_test(runtime),
-            SvgVariant::Presence => render_presence_card(runtime),
-            SvgVariant::Spotify(layout) => render_spotify_card(runtime, layout),
-        };
-        let document = Arc::new(SvgDocument {
-            body,
-            etag: format!(
-                "\"profile-svg-v{RENDERER_REVISION}-{}-{}\"",
-                variant.cache_key(),
-                runtime.stream_revision
-            ),
-            stream_revision: runtime.stream_revision,
-        });
 
         cache.insert(variant, Arc::clone(&document));
         document
@@ -195,7 +254,7 @@ fn render_hero_test(runtime: &RuntimeState) -> String {
     body
 }
 
-fn render_presence_card(runtime: &RuntimeState) -> String {
+fn render_presence_card(runtime: &RuntimeState, embedded: &EmbeddedArtworkBatch) -> String {
     let visible = visible_snapshot(runtime);
     let activity_count = match &visible {
         VisibleSnapshot::Known { activities, .. } => activities.len(),
@@ -238,7 +297,7 @@ fn render_presence_card(runtime: &RuntimeState) -> String {
                     let row_y = 94_u32.saturating_add(
                         u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(58),
                     );
-                    render_activity_row(&mut body, activity, row_y);
+                    render_activity_row(&mut body, activity, row_y, embedded);
                 }
             }
         }
@@ -258,9 +317,14 @@ fn render_presence_card(runtime: &RuntimeState) -> String {
     body
 }
 
-fn render_activity_row(body: &mut String, activity: &ActivitySnapshot, row_y: u32) {
+fn render_activity_row(
+    body: &mut String,
+    activity: &ActivitySnapshot,
+    row_y: u32,
+    embedded: &EmbeddedArtworkBatch,
+) {
     let artwork = resolve_artwork(activity);
-    render_artwork(body, &artwork, 28, row_y, 42);
+    render_artwork(body, &artwork, 28, row_y, 42, embedded);
 
     body.push_str(&format!(
         r##"<text x="84" y="{}" fill="#f4f7ff" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="17" font-weight="600">{}</text>"##,
@@ -276,7 +340,11 @@ fn render_activity_row(body: &mut String, activity: &ActivitySnapshot, row_y: u3
     ));
 }
 
-fn render_spotify_card(runtime: &RuntimeState, layout: SpotifyLayout) -> String {
+fn render_spotify_card(
+    runtime: &RuntimeState,
+    layout: SpotifyLayout,
+    embedded: &EmbeddedArtworkBatch,
+) -> String {
     let (width, height, cover_size, title_size, x_text) = match layout {
         SpotifyLayout::Mini => (420_u32, 96_u32, 64_u32, 16_u32, 94_u32),
         SpotifyLayout::Compact => (560_u32, 128_u32, 92_u32, 18_u32, 126_u32),
@@ -296,7 +364,7 @@ fn render_spotify_card(runtime: &RuntimeState, layout: SpotifyLayout) -> String 
 
     match visible_spotify(runtime) {
         VisibleSpotify::Track { spotify, stale } => {
-            render_spotify_cover(&mut body, &spotify, 16, 16, cover_size);
+            render_spotify_cover(&mut body, &spotify, 16, 16, cover_size, embedded);
             let title = spotify.title.as_deref().unwrap_or("Unknown track");
             let artist = spotify.artist.as_deref().unwrap_or("Unknown artist");
             body.push_str(&format!(
@@ -351,11 +419,22 @@ fn render_spotify_card(runtime: &RuntimeState, layout: SpotifyLayout) -> String 
     body
 }
 
-fn render_spotify_cover(body: &mut String, spotify: &SpotifyActivity, x: u32, y: u32, size: u32) {
-    if let Some(url) = spotify.cover_url.as_deref() {
+fn render_spotify_cover(
+    body: &mut String,
+    spotify: &SpotifyActivity,
+    x: u32,
+    y: u32,
+    size: u32,
+    embedded: &EmbeddedArtworkBatch,
+) {
+    if let Some(data_uri) = spotify
+        .cover_url
+        .as_deref()
+        .and_then(|url| embedded.href(url))
+    {
         body.push_str(&format!(
             r##"<image x="{x}" y="{y}" width="{size}" height="{size}" href="{}" preserveAspectRatio="xMidYMid slice"/>"##,
-            escape_xml(url)
+            escape_xml(data_uri)
         ));
     } else {
         body.push_str(&format!(
@@ -369,11 +448,18 @@ fn render_spotify_cover(body: &mut String, spotify: &SpotifyActivity, x: u32, y:
     }
 }
 
-fn render_artwork(body: &mut String, artwork: &ResolvedArtwork, x: u32, y: u32, size: u32) {
-    if let Some(url) = artwork.url.as_deref() {
+fn render_artwork(
+    body: &mut String,
+    artwork: &ResolvedArtwork,
+    x: u32,
+    y: u32,
+    size: u32,
+    embedded: &EmbeddedArtworkBatch,
+) {
+    if let Some(data_uri) = artwork.url.as_deref().and_then(|url| embedded.href(url)) {
         body.push_str(&format!(
             r##"<image x="{x}" y="{y}" width="{size}" height="{size}" href="{}" preserveAspectRatio="xMidYMid slice"/>"##,
-            escape_xml(url)
+            escape_xml(data_uri)
         ));
         return;
     }
@@ -469,6 +555,45 @@ fn activity_richness(activity: &ActivitySnapshot) -> (u8, u8, u8, u8) {
 
 fn non_empty(value: Option<&str>) -> bool {
     value.is_some_and(|value| !value.trim().is_empty())
+}
+
+fn presence_artwork_urls(runtime: &RuntimeState) -> Vec<String> {
+    let PresenceState::Known(snapshot) = &runtime.presence else {
+        return Vec::new();
+    };
+
+    if runtime.freshness == PresenceFreshness::Unavailable {
+        return Vec::new();
+    }
+
+    let mut urls = Vec::new();
+
+    for activity in select_display_activities(&snapshot.data.activities) {
+        let Some(url) = resolve_artwork(activity).url else {
+            continue;
+        };
+
+        if !urls.iter().any(|existing| existing == &url) {
+            urls.push(url);
+        }
+    }
+
+    urls
+}
+
+fn spotify_artwork_urls(runtime: &RuntimeState) -> Vec<String> {
+    let PresenceState::Known(snapshot) = &runtime.presence else {
+        return Vec::new();
+    };
+
+    if runtime.freshness == PresenceFreshness::Unavailable {
+        return Vec::new();
+    }
+
+    spotify_activity(&snapshot.data.activities)
+        .and_then(|spotify| spotify.cover_url)
+        .into_iter()
+        .collect()
 }
 
 fn visible_snapshot(runtime: &RuntimeState) -> VisibleSnapshot<'_> {
@@ -584,13 +709,18 @@ fn escape_xml(value: &str) -> String {
 mod tests {
     use std::sync::Arc;
 
+    use crate::{
+        activity::{ArtworkSource, ResolvedArtwork},
+        artwork_embed::EmbeddedArtworkBatch,
+    };
+
     use crate::state::{
         ActivityAssetsSnapshot, ActivityKind, ActivitySnapshot, ClientStatusSnapshot,
         GatewayStatus, PresenceData, PresenceFreshness, PresenceSnapshot, PresenceState,
         PresenceStatus, RuntimeState,
     };
 
-    use super::{SpotifyLayout, SvgRenderer};
+    use super::{SpotifyLayout, SvgRenderer, render_artwork};
 
     fn runtime(freshness: PresenceFreshness, stream_revision: u64) -> RuntimeState {
         RuntimeState {
@@ -602,7 +732,7 @@ mod tests {
                     activities: vec![ActivitySnapshot {
                         application_id: Some("333".to_owned()),
                         assets: Some(ActivityAssetsSnapshot {
-                            large_image: Some("444".to_owned()),
+                            large_image: Some("../../bad".to_owned()),
                             large_text: None,
                             small_image: None,
                             small_text: None,
@@ -628,10 +758,12 @@ mod tests {
         }
     }
 
-    #[test]
-    fn escapes_external_text_before_inserting_it_into_svg() {
-        let renderer = SvgRenderer::default();
-        let document = renderer.render_presence(&runtime(PresenceFreshness::Fresh, 8));
+    #[tokio::test]
+    async fn escapes_external_text_before_inserting_it_into_svg() {
+        let renderer = SvgRenderer::new().unwrap();
+        let document = renderer
+            .render_presence(&runtime(PresenceFreshness::Fresh, 8))
+            .await;
 
         assert!(!document.body().contains("<script>"));
         assert!(document.body().contains("&lt;script&gt;"));
@@ -639,25 +771,29 @@ mod tests {
         assert!(document.body().contains("repo &quot;profile&quot;"));
     }
 
-    #[test]
-    fn unchanged_stream_revision_reuses_the_rendered_document() {
-        let renderer = SvgRenderer::default();
+    #[tokio::test]
+    async fn unchanged_stream_revision_reuses_the_rendered_document() {
+        let renderer = SvgRenderer::new().unwrap();
         let state = runtime(PresenceFreshness::Fresh, 8);
-        let first = renderer.render_presence(&state);
-        let second = renderer.render_presence(&state);
+        let first = renderer.render_presence(&state).await;
+        let second = renderer.render_presence(&state).await;
 
         assert!(Arc::ptr_eq(&first, &second));
         assert_eq!(first.etag(), second.etag());
     }
 
-    #[test]
-    fn stale_state_keeps_lkg_but_unavailable_state_is_neutral() {
-        let renderer = SvgRenderer::default();
-        let stale = renderer.render_presence(&runtime(PresenceFreshness::Stale, 9));
+    #[tokio::test]
+    async fn stale_state_keeps_lkg_but_unavailable_state_is_neutral() {
+        let renderer = SvgRenderer::new().unwrap();
+        let stale = renderer
+            .render_presence(&runtime(PresenceFreshness::Stale, 9))
+            .await;
         assert!(stale.body().contains("last known"));
         assert!(stale.body().contains("Code &lt;script&gt;"));
 
-        let unavailable = renderer.render_presence(&runtime(PresenceFreshness::Unavailable, 10));
+        let unavailable = renderer
+            .render_presence(&runtime(PresenceFreshness::Unavailable, 10))
+            .await;
         assert!(
             unavailable
                 .body()
@@ -666,28 +802,53 @@ mod tests {
         assert!(!unavailable.body().contains("Code &lt;script&gt;"));
     }
 
-    #[test]
-    fn spotify_layouts_have_stable_dimensions() {
-        let renderer = SvgRenderer::default();
+    #[tokio::test]
+    async fn spotify_layouts_have_stable_dimensions() {
+        let renderer = SvgRenderer::new().unwrap();
         let state = runtime(PresenceFreshness::Fresh, 8);
 
         assert!(
             renderer
                 .render_spotify(&state, SpotifyLayout::Mini)
+                .await
                 .body()
                 .contains("viewBox=\"0 0 420 96\"")
         );
         assert!(
             renderer
                 .render_spotify(&state, SpotifyLayout::Compact)
+                .await
                 .body()
                 .contains("viewBox=\"0 0 560 128\"")
         );
         assert!(
             renderer
                 .render_spotify(&state, SpotifyLayout::Wide)
+                .await
                 .body()
                 .contains("viewBox=\"0 0 720 152\"")
         );
+    }
+
+    #[test]
+    fn remote_artwork_is_never_emitted_directly() {
+        let artwork = ResolvedArtwork {
+            fallback_key: "rustrover",
+            source: ArtworkSource::DiscordMediaProxy,
+            url: Some("https://media.discordapp.net/external/hash/icon.png".to_owned()),
+        };
+        let mut body = String::new();
+
+        render_artwork(
+            &mut body,
+            &artwork,
+            0,
+            0,
+            42,
+            &EmbeddedArtworkBatch::default(),
+        );
+
+        assert!(!body.contains("https://media.discordapp.net"));
+        assert!(body.contains(">R</text>"));
     }
 }
