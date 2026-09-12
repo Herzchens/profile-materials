@@ -1,4 +1,7 @@
-use std::{env, error::Error, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, time::Duration};
+use std::{
+    collections::HashSet, env, error::Error, ffi::OsString, fmt, net::SocketAddr, path::PathBuf,
+    time::Duration,
+};
 
 use twilight_model::id::{
     Id,
@@ -9,10 +12,16 @@ const DEFAULT_BIND_ADDR: &str = "127.0.0.1:3000";
 const DEFAULT_STATE_PATH: &str = "state/presence.json";
 const DEFAULT_STALE_AFTER_SECS: u64 = 120;
 const DEFAULT_UNAVAILABLE_AFTER_SECS: u64 = 600;
+const DEFAULT_GITHUB_USERNAME: &str = "Herzchens";
+const DEFAULT_GITHUB_STATE_PATH: &str = "state/github.json";
+const DEFAULT_GITHUB_POLL_SECS: u64 = 15;
+const DEFAULT_GITHUB_STALE_AFTER_SECS: u64 = 21_600;
+const MIN_GITHUB_POLL_SECS: u64 = 15;
 
 pub struct AppConfig {
     pub bind_addr: SocketAddr,
     pub discord: DiscordConfig,
+    pub github: GitHubConfig,
     pub stale_after: Duration,
     pub state_path: PathBuf,
     pub unavailable_after: Duration,
@@ -22,6 +31,15 @@ pub struct DiscordConfig {
     pub bot_token: String,
     pub target_guild_id: Id<GuildMarker>,
     pub target_user_id: Id<UserMarker>,
+}
+
+pub struct GitHubConfig {
+    pub featured_repositories: Vec<String>,
+    pub poll_interval: Duration,
+    pub stale_after: Duration,
+    pub state_path: PathBuf,
+    pub token: Option<String>,
+    pub username: String,
 }
 
 impl AppConfig {
@@ -40,16 +58,7 @@ impl AppConfig {
             .unwrap_or_else(|| DEFAULT_BIND_ADDR.to_owned())
             .parse()
             .map_err(|_| ConfigError::InvalidSocketAddress("PROFILE_BIND_ADDR"))?;
-        let state_path = optional_utf8("PROFILE_STATE_PATH")?
-            .map(|value| {
-                if value.trim().is_empty() {
-                    Err(ConfigError::EmptyValue("PROFILE_STATE_PATH"))
-                } else {
-                    Ok(PathBuf::from(value))
-                }
-            })
-            .transpose()?
-            .unwrap_or_else(|| PathBuf::from(DEFAULT_STATE_PATH));
+        let state_path = optional_path("PROFILE_STATE_PATH", DEFAULT_STATE_PATH)?;
         let stale_after_secs =
             optional_seconds("PROFILE_STALE_AFTER_SECS", DEFAULT_STALE_AFTER_SECS)?;
         let unavailable_after_secs = optional_seconds(
@@ -60,12 +69,39 @@ impl AppConfig {
             return Err(ConfigError::InvalidStaleWindow);
         }
 
+        let github_username = optional_non_empty("GITHUB_USERNAME")?
+            .unwrap_or_else(|| DEFAULT_GITHUB_USERNAME.to_owned());
+        let github_token = optional_utf8("GITHUB_TOKEN")?
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty());
+        let github_featured_repositories = optional_utf8("GITHUB_FEATURED_REPOS")?
+            .map(|value| parse_csv_list(&value))
+            .unwrap_or_default();
+        let github_state_path = optional_path("GITHUB_STATE_PATH", DEFAULT_GITHUB_STATE_PATH)?;
+        let github_poll_secs = optional_seconds("GITHUB_POLL_SECS", DEFAULT_GITHUB_POLL_SECS)?;
+        if github_poll_secs < MIN_GITHUB_POLL_SECS {
+            return Err(ConfigError::GitHubPollTooFrequent);
+        }
+        let github_stale_after_secs =
+            optional_seconds("GITHUB_STALE_AFTER_SECS", DEFAULT_GITHUB_STALE_AFTER_SECS)?;
+        if github_stale_after_secs <= github_poll_secs {
+            return Err(ConfigError::InvalidGitHubStaleWindow);
+        }
+
         Ok(Self {
             bind_addr,
             discord: DiscordConfig {
                 bot_token,
                 target_guild_id,
                 target_user_id,
+            },
+            github: GitHubConfig {
+                featured_repositories: github_featured_repositories,
+                poll_interval: Duration::from_secs(github_poll_secs),
+                stale_after: Duration::from_secs(github_stale_after_secs),
+                state_path: github_state_path,
+                token: github_token,
+                username: github_username,
             },
             stale_after: Duration::from_secs(stale_after_secs),
             state_path,
@@ -83,6 +119,32 @@ fn optional_utf8(name: &'static str) -> Result<Option<String>, ConfigError> {
     env::var_os(name)
         .map(|value| os_string_into_utf8(name, value))
         .transpose()
+}
+
+fn optional_non_empty(name: &'static str) -> Result<Option<String>, ConfigError> {
+    optional_utf8(name)?
+        .map(|value| {
+            let value = value.trim().to_owned();
+            if value.is_empty() {
+                Err(ConfigError::EmptyValue(name))
+            } else {
+                Ok(value)
+            }
+        })
+        .transpose()
+}
+
+fn optional_path(name: &'static str, default: &str) -> Result<PathBuf, ConfigError> {
+    optional_utf8(name)?
+        .map(|value| {
+            if value.trim().is_empty() {
+                Err(ConfigError::EmptyValue(name))
+            } else {
+                Ok(PathBuf::from(value))
+            }
+        })
+        .transpose()
+        .map(|value| value.unwrap_or_else(|| PathBuf::from(default)))
 }
 
 fn os_string_into_utf8(name: &'static str, value: OsString) -> Result<String, ConfigError> {
@@ -104,6 +166,17 @@ fn parse_seconds(name: &'static str, value: &str) -> Result<u64, ConfigError> {
         return Err(ConfigError::InvalidSeconds(name));
     }
     Ok(parsed)
+}
+
+fn parse_csv_list(value: &str) -> Vec<String> {
+    let mut seen = HashSet::new();
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .filter(|entry| seen.insert(entry.to_ascii_lowercase()))
+        .map(str::to_owned)
+        .collect()
 }
 
 fn parse_user_id(name: &'static str, value: String) -> Result<Id<UserMarker>, ConfigError> {
@@ -129,6 +202,8 @@ fn parse_snowflake(name: &'static str, value: String) -> Result<u64, ConfigError
 #[derive(Debug, Eq, PartialEq)]
 pub enum ConfigError {
     EmptyValue(&'static str),
+    GitHubPollTooFrequent,
+    InvalidGitHubStaleWindow,
     InvalidSnowflake(&'static str),
     InvalidSocketAddress(&'static str),
     InvalidSeconds(&'static str),
@@ -142,6 +217,12 @@ impl fmt::Display for ConfigError {
         match self {
             Self::EmptyValue(name) => {
                 write!(formatter, "environment variable {name} must not be empty")
+            }
+            Self::GitHubPollTooFrequent => {
+                formatter.write_str("GITHUB_POLL_SECS must be at least 15 seconds")
+            }
+            Self::InvalidGitHubStaleWindow => {
+                formatter.write_str("GITHUB_STALE_AFTER_SECS must be greater than GITHUB_POLL_SECS")
             }
             Self::InvalidSnowflake(name) => write!(
                 formatter,
@@ -172,7 +253,9 @@ impl Error for ConfigError {}
 
 #[cfg(test)]
 mod tests {
-    use super::{ConfigError, parse_guild_id, parse_seconds, parse_snowflake, parse_user_id};
+    use super::{
+        ConfigError, parse_csv_list, parse_guild_id, parse_seconds, parse_snowflake, parse_user_id,
+    };
 
     #[test]
     fn parses_non_zero_snowflakes() {
@@ -203,6 +286,14 @@ mod tests {
         assert_eq!(
             parse_seconds("TEST", "abc"),
             Err(ConfigError::InvalidSeconds("TEST"))
+        );
+    }
+
+    #[test]
+    fn parses_featured_repository_list_in_order_without_duplicates() {
+        assert_eq!(
+            parse_csv_list("Graphite-Bot, profile-materials, graphite-bot, , QuestUI"),
+            vec!["Graphite-Bot", "profile-materials", "QuestUI"]
         );
     }
 }
