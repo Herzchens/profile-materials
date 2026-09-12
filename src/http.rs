@@ -78,12 +78,7 @@ fn build_public_presence(state: &PresenceState) -> PublicPresence {
             availability: "known",
             status: Some(status_name(snapshot.data.status)),
             client_status: Some(public_client_status(&snapshot.data.client_status)),
-            activities: snapshot
-                .data
-                .activities
-                .iter()
-                .map(public_activity)
-                .collect(),
+            activities: public_activities(&snapshot.data.activities),
             observed_at_unix_ms: Some(snapshot.observed_at_unix_ms),
             revision: snapshot.revision,
         },
@@ -96,6 +91,55 @@ fn public_client_status(status: &ClientStatusSnapshot) -> PublicClientStatus {
         mobile: status.mobile.map(status_name),
         web: status.web.map(status_name),
     }
+}
+
+fn public_activities(activities: &[ActivitySnapshot]) -> Vec<PublicActivity> {
+    let mut selected: Vec<&ActivitySnapshot> = Vec::with_capacity(activities.len());
+
+    for activity in activities {
+        if let Some(index) = selected
+            .iter()
+            .position(|candidate| same_display_activity(candidate, activity))
+        {
+            if activity_richness(activity) > activity_richness(selected[index]) {
+                selected[index] = activity;
+            }
+        } else {
+            selected.push(activity);
+        }
+    }
+
+    selected.into_iter().map(public_activity).collect()
+}
+
+fn same_display_activity(left: &ActivitySnapshot, right: &ActivitySnapshot) -> bool {
+    left.name.trim().to_lowercase() == right.name.trim().to_lowercase()
+}
+
+fn activity_richness(activity: &ActivitySnapshot) -> (u8, u8, u8, u8) {
+    let descriptive_fields = u8::from(non_empty(activity.details.as_deref()))
+        + u8::from(non_empty(activity.state.as_deref()));
+    let asset_fields = activity.assets.as_ref().map_or(0, |assets| {
+        u8::from(non_empty(assets.large_image.as_deref()))
+            + u8::from(non_empty(assets.large_text.as_deref()))
+            + u8::from(non_empty(assets.small_image.as_deref()))
+            + u8::from(non_empty(assets.small_text.as_deref()))
+    });
+    let timestamp_fields = activity.timestamps.as_ref().map_or(0, |timestamps| {
+        u8::from(timestamps.start.is_some()) + u8::from(timestamps.end.is_some())
+    });
+    let application_id = u8::from(non_empty(activity.application_id.as_deref()));
+
+    (
+        descriptive_fields,
+        asset_fields,
+        timestamp_fields,
+        application_id,
+    )
+}
+
+fn non_empty(value: Option<&str>) -> bool {
+    value.is_some_and(|value| !value.trim().is_empty())
 }
 
 fn public_activity(activity: &ActivitySnapshot) -> PublicActivity {
@@ -153,8 +197,8 @@ mod tests {
     use serde_json::Value;
 
     use crate::state::{
-        ActivityKind, ActivitySnapshot, ClientStatusSnapshot, PresenceData, PresenceSnapshot,
-        PresenceState, PresenceStatus,
+        ActivityAssetsSnapshot, ActivityKind, ActivitySnapshot, ActivityTimestampsSnapshot,
+        ClientStatusSnapshot, PresenceData, PresenceSnapshot, PresenceState, PresenceStatus,
     };
 
     use super::build_public_presence;
@@ -202,6 +246,81 @@ mod tests {
         assert!(!object.contains_key("user_id"));
         assert!(!object.contains_key("session_id"));
         assert!(!contains_key_recursive(&value, "secrets"));
+    }
+
+    #[test]
+    fn keeps_distinct_activities_and_selects_the_richest_same_name_activity() {
+        let state = PresenceState::Known(PresenceSnapshot {
+            data: PresenceData {
+                activities: vec![
+                    ActivitySnapshot {
+                        application_id: Some("basic-valorant".to_owned()),
+                        assets: None,
+                        details: None,
+                        kind: ActivityKind::Playing,
+                        name: "VALORANT".to_owned(),
+                        state: None,
+                        timestamps: Some(ActivityTimestampsSnapshot {
+                            start: Some(10),
+                            end: None,
+                        }),
+                    },
+                    ActivitySnapshot {
+                        application_id: Some("rustrover".to_owned()),
+                        assets: None,
+                        details: Some("Editing gateway.rs".to_owned()),
+                        kind: ActivityKind::Playing,
+                        name: "RustRover".to_owned(),
+                        state: Some("profile-materials".to_owned()),
+                        timestamps: None,
+                    },
+                    ActivitySnapshot {
+                        application_id: Some("rich-valorant".to_owned()),
+                        assets: Some(ActivityAssetsSnapshot {
+                            large_image: Some("valorant-art".to_owned()),
+                            large_text: None,
+                            small_image: None,
+                            small_text: None,
+                        }),
+                        details: Some("Competitive (Split) 0 - 0".to_owned()),
+                        kind: ActivityKind::Playing,
+                        name: "valorant".to_owned(),
+                        state: None,
+                        timestamps: Some(ActivityTimestampsSnapshot {
+                            start: Some(20),
+                            end: None,
+                        }),
+                    },
+                    ActivitySnapshot {
+                        application_id: Some("spotify".to_owned()),
+                        assets: None,
+                        details: Some("Track title".to_owned()),
+                        kind: ActivityKind::Listening,
+                        name: "Spotify".to_owned(),
+                        state: Some("Artist".to_owned()),
+                        timestamps: None,
+                    },
+                ],
+                client_status: ClientStatusSnapshot {
+                    desktop: Some(PresenceStatus::Online),
+                    mobile: None,
+                    web: None,
+                },
+                status: PresenceStatus::Online,
+            },
+            observed_at_unix_ms: 1234,
+            revision: 8,
+        });
+
+        let value = serde_json::to_value(build_public_presence(&state)).unwrap();
+        let activities = value["activities"].as_array().unwrap();
+
+        assert_eq!(activities.len(), 3);
+        assert_eq!(activities[0]["name"], "valorant");
+        assert_eq!(activities[0]["application_id"], "rich-valorant");
+        assert_eq!(activities[0]["details"], "Competitive (Split) 0 - 0");
+        assert_eq!(activities[1]["name"], "RustRover");
+        assert_eq!(activities[2]["name"], "Spotify");
     }
 
     fn contains_key_recursive(value: &Value, key: &str) -> bool {
