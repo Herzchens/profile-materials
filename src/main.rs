@@ -4,6 +4,7 @@ mod clock;
 mod config;
 mod discord;
 mod github;
+mod hero;
 mod http;
 mod presentation;
 mod state;

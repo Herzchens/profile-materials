@@ -23,6 +23,7 @@ use crate::{
         cards::{GitHubCardDocument, GitHubCardKind, render_card},
         stats::{GitHubPublicResponse, GitHubSvgDocument, render_svg as render_github_summary_svg},
     },
+    hero::{HeroDocument, HeroRenderer},
     presentation::{
         PublicPresence, build_public_presence, gateway_status_name, presence_availability,
         presence_is_stale,
@@ -66,6 +67,7 @@ const DEBUG_LIVE_HTML: &str = r#"<!doctype html>
 struct HttpState {
     github: Arc<GitHubStore>,
     github_stale_after: Duration,
+    hero: Arc<HeroRenderer>,
     renderer: Arc<SvgRenderer>,
     store: Arc<PresenceStore>,
 }
@@ -79,6 +81,7 @@ pub async fn serve(
     let state = HttpState {
         github,
         github_stale_after,
+        hero: Arc::new(HeroRenderer::new().map_err(io::Error::other)?),
         renderer: Arc::new(SvgRenderer::new().map_err(io::Error::other)?),
         store,
     };
@@ -86,6 +89,7 @@ pub async fn serve(
         .route("/v1/public/presence", get(public_presence))
         .route("/v1/public/github", get(public_github))
         .route("/v1/live", get(live))
+        .route("/v1/svg/hero.svg", get(hero_svg))
         .route("/v1/svg/hero-test.svg", get(hero_test_svg))
         .route("/v1/svg/presence.svg", get(presence_svg))
         .route("/v1/svg/spotify.svg", get(spotify_svg))
@@ -159,6 +163,11 @@ async fn live(
             .interval(Duration::from_secs(15))
             .text("keep-alive"),
     )
+}
+
+async fn hero_svg(State(state): State<HttpState>, headers: HeaderMap) -> Response {
+    let runtime = state.store.load();
+    hero_svg_response(state.hero.render(runtime.as_ref()).await, &headers)
 }
 
 async fn hero_test_svg(State(state): State<HttpState>, headers: HeaderMap) -> Response {
@@ -238,6 +247,22 @@ fn github_card_response(state: &HttpState, kind: GitHubCardKind, headers: &Heade
         state.github_stale_after,
     );
     github_card_svg_response(&document, headers)
+}
+
+fn hero_svg_response(document: Arc<HeroDocument>, request_headers: &HeaderMap) -> Response {
+    let mut response_headers = base_svg_headers();
+    if let Ok(etag) = HeaderValue::from_str(document.etag()) {
+        response_headers.insert(ETAG, etag);
+    }
+    if let Ok(revision) = HeaderValue::from_str(&document.stream_revision().to_string()) {
+        response_headers.insert("x-profile-stream-revision", revision);
+    }
+
+    if etag_matches(request_headers, document.etag()) {
+        return (StatusCode::NOT_MODIFIED, response_headers, "").into_response();
+    }
+
+    (response_headers, document.body().to_owned()).into_response()
 }
 
 fn svg_response(document: Arc<SvgDocument>, request_headers: &HeaderMap) -> Response {
