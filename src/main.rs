@@ -1,7 +1,9 @@
+mod activity;
 mod clock;
 mod config;
 mod discord;
 mod http;
+mod presentation;
 mod state;
 
 use std::{error::Error, io, sync::Arc};

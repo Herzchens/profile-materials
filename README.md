@@ -2,7 +2,7 @@
 
 Source for the ItzHerzchen profile service and profile assets.
 
-The service uses an official Discord bot and Gateway `PRESENCE_UPDATE` events to maintain an immutable realtime presence snapshot. Phase 1 adds semantic revisions, SSE fan-out, last-known-good persistence, stale-state handling, and health endpoints while keeping the public listener loopback-only by default.
+The service reads Discord presence through an official bot, keeps the last known presence across restarts, streams changes over SSE, and exposes health endpoints for deployment. Discord activity artwork is resolved into usable image URLs with deterministic fallbacks. Linked Spotify activity is read directly from Discord, so no separate Spotify account, OAuth flow, token, or polling service is required.
 
 ## Requirements
 
@@ -29,7 +29,7 @@ PROFILE_UNAVAILABLE_AFTER_SECS=600      # optional; default shown
 RUST_LOG=info                            # optional
 ```
 
-`PROFILE_STALE_AFTER_SECS` must be lower than `PROFILE_UNAVAILABLE_AFTER_SECS`. `PROFILE_BIND_ADDR` defaults to loopback so the service can sit behind a reverse proxy without accidentally exposing an unreviewed listener.
+`PROFILE_STALE_AFTER_SECS` must be lower than `PROFILE_UNAVAILABLE_AFTER_SECS`. `PROFILE_BIND_ADDR` defaults to loopback so the service can sit behind a reverse proxy without exposing the listener directly.
 
 ## Run
 
@@ -47,16 +47,10 @@ GET /health/live
 GET /health/ready
 ```
 
-`/v1/live` is a server-sent-events stream. `/debug/live` is a deliberately minimal browser page used to prove that presence changes arrive without a page refresh.
+`/v1/public/presence` returns the current allow-listed presence state. Activities include a resolved artwork URL when Discord provides a usable asset plus a stable fallback key for the renderer. When a linked Spotify listening activity is present, the response also includes a compact `spotify` object with title, artist, album, cover URL, and track timing information.
 
-Before the first valid target presence event, the public endpoint reports `availability: "unknown"`. A Gateway transport failure never fabricates an `offline` user status. The service keeps the last-known-good snapshot during the grace window, marks it stale after the configured stale threshold, and returns a neutral `availability: "unavailable"` view after the configured unavailable threshold. A real target `PRESENCE_UPDATE` immediately restores fresh state.
+`/v1/live` streams the same public presence representation over server-sent events. `/debug/live` is a minimal browser view of that stream.
 
-The LKG file contains only the normalized presence snapshot and validation timestamp; credentials and Discord session data are never persisted there.
+Before the first valid target presence event, the public endpoint reports `availability: "unknown"`. A Gateway transport failure does not fabricate an offline user state. The service keeps the last-known-good snapshot during the grace window, marks it stale after the configured stale threshold, and returns a neutral `availability: "unavailable"` view after the configured unavailable threshold. A real target `PRESENCE_UPDATE` restores fresh state.
 
-## Checks
-
-```bash
-cargo fmt --all -- --check
-cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo test --locked --all-targets --all-features
-```
+The LKG file contains only the normalized presence snapshot and validation timestamp. Credentials and Discord session data are not persisted there.
