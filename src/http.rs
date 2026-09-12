@@ -17,6 +17,12 @@ use futures_util::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    clock,
+    github::{
+        GitHubStore,
+        cards::{GitHubCardDocument, GitHubCardKind, render_card},
+        stats::{GitHubPublicResponse, GitHubSvgDocument, render_svg as render_github_summary_svg},
+    },
     presentation::{
         PublicPresence, build_public_presence, gateway_status_name, presence_availability,
         presence_is_stale,
@@ -58,21 +64,35 @@ const DEBUG_LIVE_HTML: &str = r#"<!doctype html>
 
 #[derive(Clone)]
 struct HttpState {
+    github: Arc<GitHubStore>,
+    github_stale_after: Duration,
     renderer: Arc<SvgRenderer>,
     store: Arc<PresenceStore>,
 }
 
-pub async fn serve(bind_addr: SocketAddr, store: Arc<PresenceStore>) -> io::Result<()> {
+pub async fn serve(
+    bind_addr: SocketAddr,
+    store: Arc<PresenceStore>,
+    github: Arc<GitHubStore>,
+    github_stale_after: Duration,
+) -> io::Result<()> {
     let state = HttpState {
+        github,
+        github_stale_after,
         renderer: Arc::new(SvgRenderer::new().map_err(io::Error::other)?),
         store,
     };
     let app = Router::new()
         .route("/v1/public/presence", get(public_presence))
+        .route("/v1/public/github", get(public_github))
         .route("/v1/live", get(live))
         .route("/v1/svg/hero-test.svg", get(hero_test_svg))
         .route("/v1/svg/presence.svg", get(presence_svg))
         .route("/v1/svg/spotify.svg", get(spotify_svg))
+        .route("/v1/svg/github.svg", get(github_summary_svg))
+        .route("/v1/svg/github-stats.svg", get(github_stats_svg))
+        .route("/v1/svg/github-languages.svg", get(github_languages_svg))
+        .route("/v1/svg/github-streak.svg", get(github_streak_svg))
         .route("/debug/live", get(debug_live))
         .route("/health/live", get(health_live))
         .route("/health/ready", get(health_ready))
@@ -86,6 +106,14 @@ pub async fn serve(bind_addr: SocketAddr, store: Arc<PresenceStore>) -> io::Resu
 async fn public_presence(State(state): State<HttpState>) -> Json<PublicPresence> {
     let runtime = state.store.load();
     Json(build_public_presence(runtime.as_ref()))
+}
+
+async fn public_github(State(state): State<HttpState>) -> Json<GitHubPublicResponse> {
+    Json(GitHubPublicResponse::new(
+        state.github.load(),
+        current_unix_ms(),
+        state.github_stale_after,
+    ))
 }
 
 async fn live(
@@ -179,16 +207,41 @@ async fn spotify_svg(
     )
 }
 
+async fn github_summary_svg(State(state): State<HttpState>, headers: HeaderMap) -> Response {
+    let snapshot = state.github.load();
+    let document = render_github_summary_svg(
+        snapshot.as_deref(),
+        current_unix_ms(),
+        state.github_stale_after,
+    );
+    github_summary_svg_response(&document, &headers)
+}
+
+async fn github_stats_svg(State(state): State<HttpState>, headers: HeaderMap) -> Response {
+    github_card_response(&state, GitHubCardKind::Stats, &headers)
+}
+
+async fn github_languages_svg(State(state): State<HttpState>, headers: HeaderMap) -> Response {
+    github_card_response(&state, GitHubCardKind::Languages, &headers)
+}
+
+async fn github_streak_svg(State(state): State<HttpState>, headers: HeaderMap) -> Response {
+    github_card_response(&state, GitHubCardKind::Streak, &headers)
+}
+
+fn github_card_response(state: &HttpState, kind: GitHubCardKind, headers: &HeaderMap) -> Response {
+    let snapshot = state.github.load();
+    let document = render_card(
+        kind,
+        snapshot.as_deref(),
+        current_unix_ms(),
+        state.github_stale_after,
+    );
+    github_card_svg_response(&document, headers)
+}
+
 fn svg_response(document: Arc<SvgDocument>, request_headers: &HeaderMap) -> Response {
-    let mut response_headers = HeaderMap::new();
-    response_headers.insert(
-        CACHE_CONTROL,
-        HeaderValue::from_static("no-cache, max-age=0, must-revalidate"),
-    );
-    response_headers.insert(
-        CONTENT_TYPE,
-        HeaderValue::from_static("image/svg+xml; charset=utf-8"),
-    );
+    let mut response_headers = base_svg_headers();
     if let Ok(etag) = HeaderValue::from_str(document.etag()) {
         response_headers.insert(ETAG, etag);
     }
@@ -201,6 +254,57 @@ fn svg_response(document: Arc<SvgDocument>, request_headers: &HeaderMap) -> Resp
     }
 
     (response_headers, document.body().to_owned()).into_response()
+}
+
+fn github_card_svg_response(
+    document: &GitHubCardDocument,
+    request_headers: &HeaderMap,
+) -> Response {
+    let mut response_headers = base_svg_headers();
+    if let Ok(etag) = HeaderValue::from_str(document.etag()) {
+        response_headers.insert(ETAG, etag);
+    }
+    if let Ok(revision) = HeaderValue::from_str(&document.revision().to_string()) {
+        response_headers.insert("x-profile-github-revision", revision);
+    }
+
+    if etag_matches(request_headers, document.etag()) {
+        return (StatusCode::NOT_MODIFIED, response_headers, "").into_response();
+    }
+
+    (response_headers, document.body().to_owned()).into_response()
+}
+
+fn github_summary_svg_response(
+    document: &GitHubSvgDocument,
+    request_headers: &HeaderMap,
+) -> Response {
+    let mut response_headers = base_svg_headers();
+    if let Ok(etag) = HeaderValue::from_str(document.etag()) {
+        response_headers.insert(ETAG, etag);
+    }
+    if let Ok(revision) = HeaderValue::from_str(&document.revision().to_string()) {
+        response_headers.insert("x-profile-github-revision", revision);
+    }
+
+    if etag_matches(request_headers, document.etag()) {
+        return (StatusCode::NOT_MODIFIED, response_headers, "").into_response();
+    }
+
+    (response_headers, document.body().to_owned()).into_response()
+}
+
+fn base_svg_headers() -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        CACHE_CONTROL,
+        HeaderValue::from_static("no-cache, max-age=0, must-revalidate"),
+    );
+    headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("image/svg+xml; charset=utf-8"),
+    );
+    headers
 }
 
 fn etag_matches(headers: &HeaderMap, current_etag: &str) -> bool {
@@ -217,6 +321,16 @@ fn etag_matches(headers: &HeaderMap, current_etag: &str) -> bool {
 
 fn normalize_etag(value: &str) -> &str {
     value.strip_prefix("W/").unwrap_or(value)
+}
+
+fn current_unix_ms() -> u64 {
+    match clock::unix_time_millis() {
+        Ok(now) => now,
+        Err(error) => {
+            tracing::warn!(error = %error, "system time unavailable while serving GitHub stats");
+            0
+        }
+    }
 }
 
 async fn debug_live() -> Html<&'static str> {
