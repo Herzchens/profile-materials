@@ -4,7 +4,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 use super::stats::{GitHubSnapshot, is_stale};
 
-const SVG_REVISION: u8 = 3;
+const SVG_REVISION: u8 = 4;
 const TITLE: &str = "#70A5FD";
 const ICON: &str = "#BF91F3";
 const TEXT: &str = "#38BDAE";
@@ -324,16 +324,18 @@ fn push_streak_defs(body: &mut String) {
 .star{fill:#aa92ff;opacity:.62}.spark{stroke:#aa92ff;stroke-width:1.2;stroke-linecap:round;opacity:.7}
 .fade{opacity:0;animation:fade-in .48s ease-out forwards}
 .fire-ignite{transform-box:fill-box;transform-origin:center bottom;animation:ignite .78s cubic-bezier(.18,.78,.25,1) both}
-.flame-outer-motion{transform-box:fill-box;transform-origin:center bottom;animation:flicker-outer 1.7s .78s ease-in-out infinite alternate}
-.flame-inner-motion{transform-box:fill-box;transform-origin:center bottom;animation:flicker-inner 1.25s .78s ease-in-out infinite alternate}
-.fire-glow-motion{animation:glow-pulse 1.9s .6s ease-in-out infinite alternate}
+.flame-motion{transform-box:fill-box;transform-origin:center bottom;animation:flame-body 2.8s .78s ease-in-out infinite}
+.flame-outer-motion{transform-box:fill-box;transform-origin:center bottom;animation:flame-outer 2.8s .78s ease-in-out infinite}
+.flame-inner-motion{transform-box:fill-box;transform-origin:center bottom;animation:flame-inner 2.8s .78s ease-in-out infinite}
+.fire-glow-motion{transform-box:fill-box;transform-origin:center;animation:glow-pulse 2.8s .78s ease-in-out infinite}
 .ember{opacity:0;animation:ember-rise 2.2s ease-out infinite}.ember-2{animation-delay:.55s}.ember-3{animation-delay:1.15s}.ember-4{animation-delay:1.6s}
 .smoke{fill:none;stroke:#8990a6;stroke-width:3;stroke-linecap:round;opacity:.28}
 @keyframes fade-in{from{opacity:0}to{opacity:1}}
-@keyframes ignite{0%{opacity:.08;transform:translateY(14px) scale(.42,.18)}45%{opacity:1;transform:translateY(-5px) scale(1.12,1.18)}72%{transform:translateY(1px) scale(.96,.94)}100%{opacity:1;transform:translateY(0) scale(1)}}
-@keyframes flicker-outer{0%{transform:translate(-2px,1px) scale(.96,1.02)}50%{transform:translate(2px,-3px) scale(1.05,.94)}100%{transform:translate(-1px,-1px) scale(.99,1.07)}}
-@keyframes flicker-inner{0%{transform:translate(1px,1px) scale(.92,1)}55%{transform:translate(-2px,-2px) scale(1.04,.91)}100%{transform:translate(2px,-4px) scale(.96,1.1)}}
-@keyframes glow-pulse{from{opacity:.34;transform:scale(.94)}to{opacity:.6;transform:scale(1.08)}}
+@keyframes ignite{0%{opacity:.12;transform:translateY(6px) scale(.68,.58)}55%{opacity:1;transform:translateY(-2px) scale(1.06,1.1)}100%{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes flame-body{0%{transform:translateY(0) rotate(-.7deg) scale(1)}45%{transform:translateY(-1.5px) rotate(.8deg) scale(1.015,1.025)}75%{transform:translateY(-.5px) rotate(.15deg) scale(1.008,1.012)}100%{transform:translateY(0) rotate(-.7deg) scale(1)}}
+@keyframes flame-outer{0%{opacity:.97;transform:scale(1)}45%{opacity:1;transform:scale(1.015,1.03)}75%{opacity:.99;transform:scale(1.008,1.015)}100%{opacity:.97;transform:scale(1)}}
+@keyframes flame-inner{0%{opacity:.92;transform:scale(1)}45%{opacity:1;transform:scale(1.01,1.045)}75%{opacity:.96;transform:scale(1.005,1.02)}100%{opacity:.92;transform:scale(1)}}
+@keyframes glow-pulse{0%{opacity:.34;transform:scale(.96,.94)}45%{opacity:.52;transform:scale(1.05,1.02)}75%{opacity:.42;transform:scale(1,.98)}100%{opacity:.34;transform:scale(.96,.94)}}
 @keyframes ember-rise{0%{opacity:0;transform:translate(0,0)}18%{opacity:.95}100%{opacity:0;transform:translate(8px,-58px)}}
 </style>"##,
     );
@@ -345,13 +347,13 @@ fn render_campfire(body: &mut String, state: CampfireState) {
     );
     match state {
         CampfireState::Lit => body.push_str(
-            r##"<g id="campfire-lit"><ellipse class="fire-glow-motion" cx="0" cy="0" rx="54" ry="43" fill="#ff7b4d" opacity=".42" filter="url(#fire-glow)"/><g class="fire-ignite"><g class="flame-outer-motion"><path d="M0 19C-26 12-31-10-18-29C-10-41-8-52-7-65C7-55 16-43 15-29C25-23 31-11 26 2C22 13 12 19 0 19Z" fill="url(#flame-outer)"/></g><g class="flame-inner-motion"><path d="M1 16C-13 10-16-3-9-14C-3-23-2-30 0-39C10-30 15-20 11-11C18-6 18 5 13 11C10 14 6 16 1 16Z" fill="url(#flame-inner)"/></g></g><circle class="ember" cx="-18" cy="-19" r="3" fill="#ffcf66"/><circle class="ember ember-2" cx="14" cy="-14" r="2.5" fill="#ff8b4b"/><circle class="ember ember-3" cx="-4" cy="-24" r="2" fill="#ffd979"/><circle class="ember ember-4" cx="22" cy="-9" r="2" fill="#f7a5ff"/></g>"##,
+            r##"<g id="campfire-lit"><ellipse class="fire-glow-motion" cx="0" cy="0" rx="64" ry="45" fill="#ff7b4d" opacity=".42" filter="url(#fire-glow)"/><g class="fire-ignite"><g transform="scale(1.22 1)"><g class="flame-motion"><g class="flame-outer-motion"><path d="M0 19C-26 12-31-10-18-29C-10-41-8-52-7-65C7-55 16-43 15-29C25-23 31-11 26 2C22 13 12 19 0 19Z" fill="url(#flame-outer)"/></g><g class="flame-inner-motion"><path d="M1 16C-13 10-16-3-9-14C-3-23-2-30 0-39C10-30 15-20 11-11C18-6 18 5 13 11C10 14 6 16 1 16Z" fill="url(#flame-inner)"/></g></g></g></g><circle class="ember" cx="-18" cy="-19" r="3" fill="#ffcf66"/><circle class="ember ember-2" cx="14" cy="-14" r="2.5" fill="#ff8b4b"/><circle class="ember ember-3" cx="-4" cy="-24" r="2" fill="#ffd979"/><circle class="ember ember-4" cx="22" cy="-9" r="2" fill="#f7a5ff"/></g>"##,
         ),
         CampfireState::Out => body.push_str(
             r##"<g id="campfire-out"><ellipse cx="0" cy="4" rx="31" ry="12" fill="#424550" opacity=".5"/><path class="smoke" d="M-8 -2C-20-18 4-23-7-41C-12-50-7-56 1-62"/><path class="smoke" d="M10 1C20-14 3-24 14-37C20-44 20-51 14-58"/><circle cx="-6" cy="-1" r="3" fill="#777b86" opacity=".55"/></g>"##,
         ),
         CampfireState::Unknown => body.push_str(
-            r##"<g id="campfire-unknown"><ellipse cx="0" cy="2" rx="34" ry="14" fill="#4d4962" opacity=".36"/><path d="M0 12C-12 7-15-4-9-14C-3-23-2-30 0-36C10-28 14-18 10-9C16-4 15 5 10 9C7 11 4 12 0 12Z" fill="#77738c" opacity=".62"/><path class="smoke" d="M-4 -18C-15-31 3-38-4-51"/></g>"##,
+            r##"<g id="campfire-unknown"><ellipse cx="0" cy="2" rx="40" ry="15" fill="#4d4962" opacity=".36"/><g transform="scale(1.18 1)"><path d="M0 12C-12 7-15-4-9-14C-3-23-2-30 0-36C10-28 14-18 10-9C16-4 15 5 10 9C7 11 4 12 0 12Z" fill="#77738c" opacity=".62"/></g><path class="smoke" d="M-4 -18C-15-31 3-38-4-51"/></g>"##,
         ),
     }
     body.push_str("</g>");
@@ -538,6 +540,9 @@ mod tests {
         );
         assert!(card.body().contains("id=\"campfire-lit\""));
         assert!(card.body().contains("@keyframes ignite"));
+        assert!(card.body().contains("@keyframes flame-body"));
+        assert!(card.body().contains("class=\"flame-motion\""));
+        assert!(card.body().contains("scale(1.22 1)"));
         assert!(card.body().contains("data:image/png;base64,"));
         assert!(
             card.body()
