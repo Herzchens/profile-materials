@@ -561,7 +561,10 @@ mod tests {
         assert!(card.body().contains("@keyframes side-float-left"));
         assert!(card.body().contains("@keyframes side-float-right"));
         assert!(card.body().contains("class=\"side-float side-float-left\""));
-        assert!(card.body().contains("class=\"side-float side-float-right\""));
+        assert!(
+            card.body()
+                .contains("class=\"side-float side-float-right\"")
+        );
         assert!(card.body().contains("class=\"flame-motion\""));
         assert!(card.body().contains("scale(1.22 1)"));
         assert!(card.body().contains("data:image/png;base64,"));
