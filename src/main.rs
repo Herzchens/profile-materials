@@ -13,6 +13,8 @@ mod presence_compose;
 mod presentation;
 mod spotify;
 mod state;
+#[cfg(test)]
+mod streak_preview;
 #[allow(dead_code)]
 mod svg;
 
