@@ -539,7 +539,10 @@ mod tests {
         assert!(card.body().contains("id=\"campfire-lit\""));
         assert!(card.body().contains("@keyframes ignite"));
         assert!(card.body().contains("data:image/png;base64,"));
-        assert!(card.body().contains("<image x=\"222\" y=\"55\" width=\"292\" height=\"292\""));
+        assert!(
+            card.body()
+                .contains("<image x=\"222\" y=\"55\" width=\"292\" height=\"292\"")
+        );
         assert!(!card.body().contains("mascot-mask"));
         assert!(card.body().contains(">Sep 8 – 14</text>"));
     }
