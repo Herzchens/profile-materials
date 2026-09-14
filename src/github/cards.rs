@@ -4,7 +4,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 use super::stats::{GitHubSnapshot, is_stale};
 
-const SVG_REVISION: u8 = 8;
+const SVG_REVISION: u8 = 9;
 const TITLE: &str = "#70A5FD";
 const ICON: &str = "#BF91F3";
 const TEXT: &str = "#38BDAE";
@@ -259,13 +259,13 @@ fn render_streak(snapshot: &GitHubSnapshot, stale: bool) -> String {
 
     let _ = write!(
         body,
-        r##"<g class="fade"><g class="side-orbit side-orbit-left"><animateMotion path="M0 -3C1.8 -3 3.2 -1.6 3.2 .2C3.2 2 2 3.2 .4 3.2C-1.7 3.2 -3.4 2.1 -3.4 .5C-3.4 -1.5 -1.8 -3 0 -3" dur="23.6s" begin="-7.4s" repeatCount="indefinite" rotate="0" calcMode="paced"/><text x="105" y="151" text-anchor="middle" class="side-number">{}</text><text x="105" y="187" text-anchor="middle" class="side-label">Total Contributions</text><text x="105" y="216" text-anchor="middle" class="range">{}</text></g></g>"##,
+        r##"<g class="fade"><text x="105" y="151" text-anchor="middle" class="side-number">{}</text><text x="105" y="187" text-anchor="middle" class="side-label">Total Contributions</text><text x="105" y="216" text-anchor="middle" class="range">{}</text></g>"##,
         format_count(snapshot.contributions.total),
         escape_xml(&total_range)
     );
     let _ = write!(
         body,
-        r##"<g class="fade" style="animation-delay:180ms"><g class="side-orbit side-orbit-right"><animateMotion path="M0 2.8C-1.8 2.8 -3.3 1.8 -3.3 .4C-3.3 -1.7 -2.1 -3.1 -.8 -3.1C1.3 -3.1 3.5 -1.8 3.5 -.3C3.5 1.5 1.9 2.8 0 2.8" dur="27.1s" begin="-15.2s" repeatCount="indefinite" rotate="0" calcMode="paced"/><text x="730" y="151" text-anchor="middle" class="side-number">{}</text><text x="730" y="187" text-anchor="middle" class="side-label">Longest Streak</text><text x="730" y="216" text-anchor="middle" class="range">{}</text></g></g>"##,
+        r##"<g class="fade" style="animation-delay:180ms"><text x="730" y="151" text-anchor="middle" class="side-number">{}</text><text x="730" y="187" text-anchor="middle" class="side-label">Longest Streak</text><text x="730" y="216" text-anchor="middle" class="range">{}</text></g>"##,
         snapshot.contributions.longest_streak_days,
         escape_xml(&longest_range)
     );
@@ -553,17 +553,8 @@ mod tests {
         assert!(card.body().contains("id=\"campfire-lit\""));
         assert!(card.body().contains("@keyframes ignite"));
         assert!(card.body().contains("@keyframes flame-body"));
-        assert!(card.body().contains("class=\"side-orbit side-orbit-left\""));
-        assert!(
-            card.body()
-                .contains("class=\"side-orbit side-orbit-right\"")
-        );
-        assert_eq!(card.body().matches("<animateMotion").count(), 2);
-        assert!(card.body().contains("calcMode=\"paced\""));
-        assert!(card.body().contains("repeatCount=\"indefinite\""));
-        assert!(card.body().contains("rotate=\"0\""));
-        assert!(card.body().contains("dur=\"23.6s\""));
-        assert!(card.body().contains("dur=\"27.1s\""));
+        assert!(!card.body().contains("<animateMotion"));
+        assert!(!card.body().contains("side-orbit"));
         assert!(!card.body().contains("side-drift-"));
         assert!(!card.body().contains("@keyframes drift-x-left"));
         assert!(!card.body().contains("@keyframes drift-y-left"));
