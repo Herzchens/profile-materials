@@ -4,7 +4,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 use super::stats::{GitHubSnapshot, is_stale};
 
-const SVG_REVISION: u8 = 2;
+const SVG_REVISION: u8 = 3;
 const TITLE: &str = "#70A5FD";
 const ICON: &str = "#BF91F3";
 const TEXT: &str = "#38BDAE";
@@ -271,11 +271,8 @@ fn render_streak(snapshot: &GitHubSnapshot, stale: bool) -> String {
     let mascot_uri = streak_mascot_data_uri();
     let _ = write!(
         body,
-        r##"<image x="242" y="64" width="190" height="291" href="{}" preserveAspectRatio="xMidYMid meet" mask="url(#mascot-mask)" opacity=".96"/>"##,
+        r##"<image x="222" y="55" width="292" height="292" href="{}" preserveAspectRatio="xMidYMid meet" opacity=".98"/>"##,
         escape_xml(mascot_uri)
-    );
-    body.push_str(
-        r##"<line x1="415" y1="204" x2="501" y2="229" stroke="#d7b391" stroke-width="3.2" stroke-linecap="round" opacity=".92"/><rect x="496" y="221" width="13" height="12" rx="4" fill="#fff3df" stroke="#f3cfa8" stroke-width="1" transform="rotate(16 502.5 227)"/>"##,
     );
 
     let state = campfire_state(snapshot, stale);
@@ -311,8 +308,6 @@ fn push_streak_defs(body: &mut String) {
 <linearGradient id="flame-outer" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff6b3d"/><stop offset=".52" stop-color="#ff9f43"/><stop offset="1" stop-color="#ffd66b"/></linearGradient>
 <linearGradient id="flame-inner" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#8e5cff"/><stop offset=".54" stop-color="#ff7f50"/><stop offset="1" stop-color="#fff0a7"/></linearGradient>
 <linearGradient id="number-gradient" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#b68cff"/><stop offset=".55" stop-color="#d48cff"/><stop offset="1" stop-color="#ffbd68"/></linearGradient>
-<radialGradient id="mascot-fade" cx="56%" cy="52%" r="70%"><stop offset="0" stop-color="#fff"/><stop offset=".72" stop-color="#fff"/><stop offset="1" stop-color="#000"/></radialGradient>
-<mask id="mascot-mask" maskUnits="userSpaceOnUse" x="230" y="54" width="215" height="310"><rect x="230" y="54" width="215" height="310" fill="url(#mascot-fade)"/></mask>
 <filter id="fire-glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="10"/></filter>
 <filter id="number-glow" x="-30%" y="-70%" width="160%" height="240%"><feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#ff9b55" flood-opacity=".42"/></filter>
 </defs>
@@ -544,6 +539,8 @@ mod tests {
         assert!(card.body().contains("id=\"campfire-lit\""));
         assert!(card.body().contains("@keyframes ignite"));
         assert!(card.body().contains("data:image/png;base64,"));
+        assert!(card.body().contains("<image x=\"222\" y=\"55\" width=\"292\" height=\"292\""));
+        assert!(!card.body().contains("mascot-mask"));
         assert!(card.body().contains(">Sep 8 – 14</text>"));
     }
 
