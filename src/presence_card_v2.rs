@@ -15,7 +15,10 @@ use crate::{
 };
 
 const CARD_WIDTH: u32 = 1774;
-const RENDERER_REVISION: u8 = 13;
+const CARD_FRAME_INSET: u32 = 42;
+const CARD_FRAME_WIDTH: u32 = 1690;
+const CARD_VIEWBOX_PADDING: u32 = 1;
+const RENDERER_REVISION: u8 = 14;
 const TIME_BUCKET_MS: u64 = 15_000;
 const MAX_VISIBLE_ACTIVITIES: usize = 4;
 const META_ROW_GAP: u32 = 31;
@@ -137,14 +140,17 @@ fn render_presence_card(
         1 | 2 => 590,
         _ => 887,
     };
+    let frame_height = height.saturating_sub(CARD_FRAME_INSET * 2);
+    let output_width = CARD_FRAME_WIDTH + CARD_VIEWBOX_PADDING * 2;
+    let output_height = frame_height + CARD_VIEWBOX_PADDING * 2;
+    let viewbox_x = CARD_FRAME_INSET.saturating_sub(CARD_VIEWBOX_PADDING);
+    let viewbox_y = viewbox_x;
     let mut body = String::with_capacity(72_000);
 
     body.push_str(&format!(
-        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{CARD_WIDTH}" height="{height}" viewBox="0 0 {CARD_WIDTH} {height}" role="img" aria-label="ItzHerzchen Discord activity"><defs>
-<linearGradient id="canvas-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0f1320"/><stop offset=".52" stop-color="#15182a"/><stop offset="1" stop-color="#101522"/></linearGradient>
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{output_width}" height="{output_height}" viewBox="{viewbox_x} {viewbox_y} {output_width} {output_height}" role="img" aria-label="ItzHerzchen Discord activity"><defs>
 <linearGradient id="root-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b101d"/><stop offset=".54" stop-color="#101528"/><stop offset="1" stop-color="#090e19"/></linearGradient>
 <linearGradient id="fallback-art" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#262044"/><stop offset="1" stop-color="#111729"/></linearGradient>
-<filter id="shadow" x="-20%" y="-30%" width="140%" height="160%"><feDropShadow dx="0" dy="7" stdDeviation="14" flood-color="#03050b" flood-opacity=".38"/></filter>
 <filter id="art-blur" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="26"/></filter>
 <filter id="art-blur-single" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="18"/></filter>
 <clipPath id="avatar-clip"><circle cx="153" cy="134" r="63"/></clipPath>
@@ -152,8 +158,7 @@ fn render_presence_card(
     ));
 
     body.push_str(&format!(
-        r##"<g id="layout-shell"><rect x="0" y="0" width="{CARD_WIDTH}" height="{height}" fill="url(#canvas-bg)"/><rect x="42" y="42" width="1690" height="{}" rx="24" fill="url(#root-bg)" stroke="#6556bc" stroke-opacity=".64" stroke-width="1.5" filter="url(#shadow)"/><line x1="62" y1="208" x2="1712" y2="208" stroke="#8c91b1" stroke-opacity=".24"/></g>"##,
-        height.saturating_sub(84)
+        r##"<g id="layout-shell"><rect x="{CARD_FRAME_INSET}" y="{CARD_FRAME_INSET}" width="{CARD_FRAME_WIDTH}" height="{frame_height}" rx="24" fill="url(#root-bg)" stroke="#6556bc" stroke-opacity=".64" stroke-width="1.5"/><line x1="62" y1="208" x2="1712" y2="208" stroke="#8c91b1" stroke-opacity=".24"/></g>"##
     ));
 
     render_identity_header(&mut body, runtime, identity, embedded);

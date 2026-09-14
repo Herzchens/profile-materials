@@ -4,11 +4,11 @@ Source for the ItzHerzchen profile service and profile assets.
 
 ## Temporary GitHub compatibility preview
 
-[![Live presence card](https://profile.tailed8451.ts.net/v1/svg/presence.svg?compat=activity-cards)](https://profile.tailed8451.ts.net/presence)
+[![Live presence card](https://profile.tailed8451.ts.net/v1/svg/presence.svg?compat=activity-cards-v2)](https://profile.tailed8451.ts.net/presence)
 
 [![Contribution streak compatibility preview](https://profile.tailed8451.ts.net/v1/svg/github-streak.svg?compat=campfire-v6)](https://profile.tailed8451.ts.net/v1/svg/github-streak.svg?compat=campfire-v6)
 
-The streak preview intentionally embeds the live origin URL through normal GitHub Markdown so GitHub Camo compatibility can be checked after the branch build is deployed for testing. The origin SVG embeds its mascot raster asset directly, switches between lit and extinguished mascot poses from the contribution state, uses self-contained SVG animation for the lit campfire state, floats the side contribution metrics subtly, and keeps inactive smoke static.
+The streak preview intentionally embeds the live origin URL through normal GitHub Markdown so GitHub Camo compatibility can be checked after the branch build is deployed for testing. The origin SVG embeds its mascot raster asset directly, switches between lit and extinguished mascot poses from the contribution state, uses self-contained SVG animation for the lit campfire state, floats the side contribution metrics subtly, and keeps inactive smoke static. The presence preview is cropped to the rounded card boundary instead of painting an opaque canvas outside the border, so GitHub README backgrounds do not show a rectangular halo around the card.
 
 The service reads Discord presence through an official bot, keeps the last known presence across restarts, streams changes over SSE, and exposes health endpoints for deployment. Discord activity artwork is resolved into usable image URLs with deterministic fallbacks. Spotify playback is collected independently through the Spotify Web API when configured; Discord Spotify RPC is excluded from the presentation layer so Spotify visibility does not depend on Discord presence propagation.
 
