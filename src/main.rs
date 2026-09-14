@@ -6,8 +6,14 @@ mod discord;
 mod github;
 mod hero;
 mod http;
+#[allow(clippy::too_many_arguments)]
+#[path = "presence_card_v2.rs"]
+mod presence_card;
+mod presence_compose;
 mod presentation;
+mod spotify;
 mod state;
+#[allow(dead_code)]
 mod svg;
 
 use std::{error::Error, io, sync::Arc};
@@ -17,6 +23,7 @@ use tracing_subscriber::EnvFilter;
 use crate::{
     config::AppConfig,
     github::GitHubStore,
+    spotify::SpotifyStore,
     state::{PresenceState, PresenceStore, lkg},
 };
 
@@ -31,6 +38,7 @@ async fn main() -> Result<(), DynError> {
         bind_addr,
         discord,
         github: github_config,
+        spotify: spotify_config,
         stale_after,
         state_path,
         unavailable_after,
@@ -71,6 +79,8 @@ async fn main() -> Result<(), DynError> {
             "presence state initialized from LKG"
         );
     }
+    let identity_store = Arc::new(discord::identity::IdentityStore::new());
+    let spotify_store = Arc::new(SpotifyStore::new());
 
     let github_restored = match github::lkg::load(&github_config.state_path).await {
         Ok(restored) => restored,
@@ -94,18 +104,30 @@ async fn main() -> Result<(), DynError> {
     let github_stale_after = github_config.stale_after;
     let github_store = Arc::new(GitHubStore::new(github_restored));
 
+    let identity_bot_token = discord.bot_token.clone();
+    let identity_user_id = discord.target_user_id;
     let gateway = discord::gateway::run(discord, Arc::clone(&store), state_path);
+    let identity_collector = discord::identity::run(
+        identity_bot_token,
+        identity_user_id,
+        Arc::clone(&identity_store),
+    );
     let github_collector = github::run(github_config, Arc::clone(&github_store));
+    let spotify_collector = spotify::run_optional(spotify_config, Arc::clone(&spotify_store));
     let http = http::serve(
         bind_addr,
         Arc::clone(&store),
+        Arc::clone(&identity_store),
+        Arc::clone(&spotify_store),
         Arc::clone(&github_store),
         github_stale_after,
     );
     let watchdog = state::run_stale_watchdog(store);
 
     tokio::pin!(gateway);
+    tokio::pin!(identity_collector);
     tokio::pin!(github_collector);
+    tokio::pin!(spotify_collector);
     tokio::pin!(http);
     tokio::pin!(watchdog);
 
@@ -114,8 +136,16 @@ async fn main() -> Result<(), DynError> {
             Ok(()) => Err(Box::new(io::Error::other("Discord Gateway collector ended unexpectedly")) as DynError),
             Err(error) => Err(Box::new(error) as DynError),
         },
+        result = &mut identity_collector => match result {
+            Ok(()) => Err(Box::new(io::Error::other("Discord identity collector ended unexpectedly")) as DynError),
+            Err(error) => Err(Box::new(error) as DynError),
+        },
         result = &mut github_collector => match result {
             Ok(()) => Err(Box::new(io::Error::other("GitHub collector ended unexpectedly")) as DynError),
+            Err(error) => Err(Box::new(error) as DynError),
+        },
+        result = &mut spotify_collector => match result {
+            Ok(()) => Err(Box::new(io::Error::other("Spotify collector ended unexpectedly")) as DynError),
             Err(error) => Err(Box::new(error) as DynError),
         },
         result = &mut http => match result {

@@ -21,11 +21,19 @@ pub struct PresenceData {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ActivityPartySnapshot {
+    pub current_size: u64,
+    pub max_size: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ActivitySnapshot {
     pub application_id: Option<String>,
     pub assets: Option<ActivityAssetsSnapshot>,
     pub details: Option<String>,
     pub kind: ActivityKind,
+    #[serde(default)]
+    pub party: Option<ActivityPartySnapshot>,
     pub name: String,
     pub state: Option<String>,
     pub timestamps: Option<ActivityTimestampsSnapshot>,

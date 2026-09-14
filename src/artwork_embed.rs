@@ -191,7 +191,14 @@ fn trusted_artwork_url(raw_url: &str) -> Option<Url> {
     let path = url.path();
 
     let trusted = match host {
-        "cdn.discordapp.com" => path.starts_with("/app-assets/"),
+        "cdn.discordapp.com" => {
+            path.starts_with("/app-assets/")
+                || path.starts_with("/app-icons/")
+                || path.starts_with("/avatars/")
+                || path.starts_with("/avatar-decoration-presets/")
+                || path.starts_with("/guild-tag-badges/")
+                || path.starts_with("/embed/avatars/")
+        }
         "media.discordapp.net" => !path.is_empty(),
         "i.scdn.co" => path.starts_with("/image/"),
         _ => false,
@@ -224,6 +231,25 @@ mod tests {
     #[test]
     fn only_known_https_artwork_origins_are_allowed() {
         assert!(trusted_artwork_url("https://cdn.discordapp.com/app-assets/123/456.png").is_some());
+        assert!(
+            trusted_artwork_url("https://cdn.discordapp.com/app-icons/123/abcdef.png?size=512")
+                .is_some()
+        );
+        assert!(
+            trusted_artwork_url("https://cdn.discordapp.com/avatars/123/hash.webp?size=256")
+                .is_some()
+        );
+        assert!(
+            trusted_artwork_url(
+                "https://cdn.discordapp.com/avatar-decoration-presets/a_hash.png?size=256"
+            )
+            .is_some()
+        );
+        assert!(
+            trusted_artwork_url("https://cdn.discordapp.com/guild-tag-badges/123/hash.png?size=64")
+                .is_some()
+        );
+        assert!(trusted_artwork_url("https://cdn.discordapp.com/embed/avatars/2.png").is_some());
         assert!(
             trusted_artwork_url(
                 "https://media.discordapp.net/external/hash/https/example.invalid/icon.png"

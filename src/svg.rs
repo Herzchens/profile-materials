@@ -740,6 +740,7 @@ mod tests {
                         details: Some("Editing <main>& tests".to_owned()),
                         kind: ActivityKind::Playing,
                         name: "Code <script>alert(1)</script>".to_owned(),
+                        party: None,
                         state: Some("repo \"profile\"".to_owned()),
                         timestamps: None,
                     }],

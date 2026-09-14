@@ -3,6 +3,7 @@ use crate::state::{ActivityKind, ActivitySnapshot};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ArtworkSource {
     DiscordApplication,
+    DiscordApplicationIcon,
     DiscordMediaProxy,
     Spotify,
     LocalFallback,
@@ -12,6 +13,7 @@ impl ArtworkSource {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::DiscordApplication => "discord_application",
+            Self::DiscordApplicationIcon => "discord_application_icon",
             Self::DiscordMediaProxy => "discord_media_proxy",
             Self::Spotify => "spotify",
             Self::LocalFallback => "local_fallback",
@@ -27,6 +29,12 @@ pub struct ResolvedArtwork {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedActivityArtwork {
+    pub large: ResolvedArtwork,
+    pub small: Option<ResolvedArtwork>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SpotifyActivity {
     pub album: Option<String>,
     pub artist: Option<String>,
@@ -37,15 +45,37 @@ pub struct SpotifyActivity {
     pub title: Option<String>,
 }
 
-pub fn resolve_artwork(activity: &ActivitySnapshot) -> ResolvedArtwork {
+pub fn resolve_activity_artwork(activity: &ActivitySnapshot) -> ResolvedActivityArtwork {
     let fallback_key = local_icon_key(&activity.name);
-    let Some(raw) = activity
+    let large = resolve_asset(
+        activity,
+        activity
+            .assets
+            .as_ref()
+            .and_then(|assets| assets.large_image.as_deref()),
+        fallback_key,
+    );
+    let small = activity
         .assets
         .as_ref()
-        .and_then(|assets| assets.large_image.as_deref())
+        .and_then(|assets| assets.small_image.as_deref())
         .map(str::trim)
         .filter(|value| !value.is_empty())
-    else {
+        .map(|raw| resolve_asset(activity, Some(raw), fallback_key));
+
+    ResolvedActivityArtwork { large, small }
+}
+
+pub fn resolve_artwork(activity: &ActivitySnapshot) -> ResolvedArtwork {
+    resolve_activity_artwork(activity).large
+}
+
+fn resolve_asset(
+    activity: &ActivitySnapshot,
+    raw: Option<&str>,
+    fallback_key: &'static str,
+) -> ResolvedArtwork {
+    let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
         return ResolvedArtwork {
             fallback_key,
             source: ArtworkSource::LocalFallback,
@@ -74,6 +104,20 @@ pub fn resolve_artwork(activity: &ActivitySnapshot) -> ResolvedArtwork {
         };
     }
 
+    if let Some(icon_hash) = raw.strip_prefix("appicon:")
+        && valid_simple_id(icon_hash)
+        && let Some(application_id) = activity.application_id.as_deref()
+        && valid_snowflake(application_id)
+    {
+        return ResolvedArtwork {
+            fallback_key,
+            source: ArtworkSource::DiscordApplicationIcon,
+            url: Some(format!(
+                "https://cdn.discordapp.com/app-icons/{application_id}/{icon_hash}.png?size=512"
+            )),
+        };
+    }
+
     if valid_simple_id(raw)
         && let Some(application_id) = activity.application_id.as_deref()
         && valid_snowflake(application_id)
@@ -94,10 +138,42 @@ pub fn resolve_artwork(activity: &ActivitySnapshot) -> ResolvedArtwork {
     }
 }
 
+pub fn activity_preference_key(activity: &ActivitySnapshot) -> (u64, u64, u8, u8, u8, u8) {
+    let timestamps = activity.timestamps.as_ref();
+    let start = timestamps
+        .and_then(|timestamps| timestamps.start)
+        .unwrap_or(0);
+    let end = timestamps
+        .and_then(|timestamps| timestamps.end)
+        .unwrap_or(0);
+    let descriptive_fields = u8::from(non_empty(activity.details.as_deref()))
+        + u8::from(non_empty(activity.state.as_deref()));
+    let asset_fields = activity.assets.as_ref().map_or(0, |assets| {
+        u8::from(non_empty(assets.large_image.as_deref()))
+            + u8::from(non_empty(assets.large_text.as_deref()))
+            + u8::from(non_empty(assets.small_image.as_deref()))
+            + u8::from(non_empty(assets.small_text.as_deref()))
+    });
+    let timestamp_fields = timestamps.map_or(0, |timestamps| {
+        u8::from(timestamps.start.is_some()) + u8::from(timestamps.end.is_some())
+    });
+    let application_id = u8::from(non_empty(activity.application_id.as_deref()));
+
+    (
+        start,
+        end,
+        descriptive_fields,
+        asset_fields,
+        timestamp_fields,
+        application_id,
+    )
+}
+
 pub fn spotify_activity(activities: &[ActivitySnapshot]) -> Option<SpotifyActivity> {
     let activity = activities
         .iter()
-        .find(|activity| is_spotify_activity(activity))?;
+        .filter(|activity| is_spotify_activity(activity))
+        .max_by_key(|activity| activity_preference_key(activity))?;
     let artwork = resolve_artwork(activity);
     let timestamps = activity.timestamps.as_ref();
     let start_unix_ms = timestamps.and_then(|timestamps| timestamps.start);
@@ -133,6 +209,8 @@ pub fn local_icon_key(name: &str) -> &'static str {
         "intellij idea" | "intellij idea ultimate" => "intellij",
         "pycharm" | "pycharm professional" => "pycharm",
         "visual studio code" | "code" => "vscode",
+        "genshin impact" | "genshin" => "genshin",
+        "soundcloud" => "soundcloud",
         _ => "activity",
     }
 }
@@ -142,6 +220,10 @@ fn trimmed_owned(value: Option<&str>) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
+}
+
+fn non_empty(value: Option<&str>) -> bool {
+    value.is_some_and(|value| !value.trim().is_empty())
 }
 
 fn valid_snowflake(value: &str) -> bool {
@@ -169,7 +251,10 @@ mod tests {
         ActivityAssetsSnapshot, ActivityKind, ActivitySnapshot, ActivityTimestampsSnapshot,
     };
 
-    use super::{ArtworkSource, local_icon_key, resolve_artwork, spotify_activity};
+    use super::{
+        ArtworkSource, activity_preference_key, local_icon_key, resolve_activity_artwork,
+        resolve_artwork, spotify_activity,
+    };
 
     fn activity(
         name: &str,
@@ -188,6 +273,7 @@ mod tests {
             details: None,
             kind,
             name: name.to_owned(),
+            party: None,
             state: None,
             timestamps: None,
         }
@@ -211,6 +297,43 @@ mod tests {
             )
         );
         assert_eq!(artwork.fallback_key, "valorant");
+    }
+
+    #[test]
+    fn resolves_large_and_small_application_assets() {
+        let mut activity = activity(
+            "VALORANT",
+            ActivityKind::Playing,
+            Some("1443350165678198935"),
+            Some("1514484181319811163"),
+        );
+        activity.assets.as_mut().unwrap().small_image = Some("987654321".to_owned());
+
+        let artwork = resolve_activity_artwork(&activity);
+        assert!(artwork.large.url.is_some());
+        assert_eq!(
+            artwork.small.unwrap().url.as_deref(),
+            Some("https://cdn.discordapp.com/app-assets/1443350165678198935/987654321.png")
+        );
+    }
+
+    #[test]
+    fn resolves_discord_application_icons() {
+        let activity = activity(
+            "Wuthering Waves",
+            ActivityKind::Playing,
+            Some("1247227126416146462"),
+            Some("appicon:1e7d7e9ca69ea0951467994c581f70f5"),
+        );
+        let artwork = resolve_artwork(&activity);
+
+        assert_eq!(artwork.source, ArtworkSource::DiscordApplicationIcon);
+        assert_eq!(
+            artwork.url.as_deref(),
+            Some(
+                "https://cdn.discordapp.com/app-icons/1247227126416146462/1e7d7e9ca69ea0951467994c581f70f5.png?size=512"
+            )
+        );
     }
 
     #[test]
@@ -265,6 +388,38 @@ mod tests {
         assert!(artwork.url.is_none());
         assert_eq!(artwork.fallback_key, "activity");
         assert_eq!(local_icon_key("Visual Studio Code"), "vscode");
+    }
+
+    #[test]
+    fn prefers_the_newest_duplicate_activity() {
+        let mut old = activity(
+            "Spotify",
+            ActivityKind::Listening,
+            None,
+            Some("spotify:old"),
+        );
+        old.details = Some("Old track".to_owned());
+        old.timestamps = Some(ActivityTimestampsSnapshot {
+            start: Some(1_000),
+            end: Some(181_000),
+        });
+
+        let mut new = activity(
+            "Spotify",
+            ActivityKind::Listening,
+            None,
+            Some("spotify:new"),
+        );
+        new.details = Some("New track".to_owned());
+        new.timestamps = Some(ActivityTimestampsSnapshot {
+            start: Some(200_000),
+            end: Some(380_000),
+        });
+
+        assert!(activity_preference_key(&new) > activity_preference_key(&old));
+        let spotify = spotify_activity(&[old, new]).unwrap();
+        assert_eq!(spotify.title.as_deref(), Some("New track"));
+        assert_eq!(spotify.start_unix_ms, Some(200_000));
     }
 
     #[test]

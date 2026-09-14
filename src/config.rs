@@ -17,11 +17,15 @@ const DEFAULT_GITHUB_STATE_PATH: &str = "state/github.json";
 const DEFAULT_GITHUB_POLL_SECS: u64 = 15;
 const DEFAULT_GITHUB_STALE_AFTER_SECS: u64 = 21_600;
 const MIN_GITHUB_POLL_SECS: u64 = 15;
+const DEFAULT_SPOTIFY_POLL_SECS: u64 = 5;
+const DEFAULT_SPOTIFY_REFRESH_TOKEN_PATH: &str = "state/spotify-refresh-token";
+const MIN_SPOTIFY_POLL_SECS: u64 = 5;
 
 pub struct AppConfig {
     pub bind_addr: SocketAddr,
     pub discord: DiscordConfig,
     pub github: GitHubConfig,
+    pub spotify: Option<SpotifyConfig>,
     pub stale_after: Duration,
     pub state_path: PathBuf,
     pub unavailable_after: Duration,
@@ -40,6 +44,14 @@ pub struct GitHubConfig {
     pub state_path: PathBuf,
     pub token: Option<String>,
     pub username: String,
+}
+
+pub struct SpotifyConfig {
+    pub client_id: String,
+    pub client_secret: String,
+    pub poll_interval: Duration,
+    pub refresh_token: String,
+    pub refresh_token_path: PathBuf,
 }
 
 impl AppConfig {
@@ -88,6 +100,8 @@ impl AppConfig {
             return Err(ConfigError::InvalidGitHubStaleWindow);
         }
 
+        let spotify = spotify_config()?;
+
         Ok(Self {
             bind_addr,
             discord: DiscordConfig {
@@ -103,10 +117,53 @@ impl AppConfig {
                 token: github_token,
                 username: github_username,
             },
+            spotify,
             stale_after: Duration::from_secs(stale_after_secs),
             state_path,
             unavailable_after: Duration::from_secs(unavailable_after_secs),
         })
+    }
+}
+
+fn spotify_config() -> Result<Option<SpotifyConfig>, ConfigError> {
+    let client_id = optional_utf8("SPOTIFY_CLIENT_ID")?;
+    let client_secret = optional_utf8("SPOTIFY_CLIENT_SECRET")?;
+    let refresh_token = optional_utf8("SPOTIFY_REFRESH_TOKEN")?;
+
+    if client_id.is_none() && client_secret.is_none() && refresh_token.is_none() {
+        return Ok(None);
+    }
+    if client_id.is_none() || client_secret.is_none() || refresh_token.is_none() {
+        return Err(ConfigError::IncompleteSpotifyConfig);
+    }
+
+    let client_id = non_empty_owned("SPOTIFY_CLIENT_ID", client_id.unwrap())?;
+    let client_secret = non_empty_owned("SPOTIFY_CLIENT_SECRET", client_secret.unwrap())?;
+    let refresh_token = non_empty_owned("SPOTIFY_REFRESH_TOKEN", refresh_token.unwrap())?;
+    let poll_secs = optional_seconds("SPOTIFY_POLL_SECS", DEFAULT_SPOTIFY_POLL_SECS)?;
+    if poll_secs < MIN_SPOTIFY_POLL_SECS {
+        return Err(ConfigError::SpotifyPollTooFrequent);
+    }
+    let refresh_token_path = optional_path(
+        "SPOTIFY_REFRESH_TOKEN_PATH",
+        DEFAULT_SPOTIFY_REFRESH_TOKEN_PATH,
+    )?;
+
+    Ok(Some(SpotifyConfig {
+        client_id,
+        client_secret,
+        poll_interval: Duration::from_secs(poll_secs),
+        refresh_token,
+        refresh_token_path,
+    }))
+}
+
+fn non_empty_owned(name: &'static str, value: String) -> Result<String, ConfigError> {
+    let value = value.trim().to_owned();
+    if value.is_empty() {
+        Err(ConfigError::EmptyValue(name))
+    } else {
+        Ok(value)
     }
 }
 
@@ -123,14 +180,7 @@ fn optional_utf8(name: &'static str) -> Result<Option<String>, ConfigError> {
 
 fn optional_non_empty(name: &'static str) -> Result<Option<String>, ConfigError> {
     optional_utf8(name)?
-        .map(|value| {
-            let value = value.trim().to_owned();
-            if value.is_empty() {
-                Err(ConfigError::EmptyValue(name))
-            } else {
-                Ok(value)
-            }
-        })
+        .map(|value| non_empty_owned(name, value))
         .transpose()
 }
 
@@ -203,6 +253,7 @@ fn parse_snowflake(name: &'static str, value: String) -> Result<u64, ConfigError
 pub enum ConfigError {
     EmptyValue(&'static str),
     GitHubPollTooFrequent,
+    IncompleteSpotifyConfig,
     InvalidGitHubStaleWindow,
     InvalidSnowflake(&'static str),
     InvalidSocketAddress(&'static str),
@@ -210,6 +261,7 @@ pub enum ConfigError {
     InvalidStaleWindow,
     Missing(&'static str),
     NotUtf8(&'static str),
+    SpotifyPollTooFrequent,
 }
 
 impl fmt::Display for ConfigError {
@@ -221,6 +273,9 @@ impl fmt::Display for ConfigError {
             Self::GitHubPollTooFrequent => {
                 formatter.write_str("GITHUB_POLL_SECS must be at least 15 seconds")
             }
+            Self::IncompleteSpotifyConfig => formatter.write_str(
+                "SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, and SPOTIFY_REFRESH_TOKEN must be configured together",
+            ),
             Self::InvalidGitHubStaleWindow => {
                 formatter.write_str("GITHUB_STALE_AFTER_SECS must be greater than GITHUB_POLL_SECS")
             }
@@ -244,6 +299,9 @@ impl fmt::Display for ConfigError {
             }
             Self::NotUtf8(name) => {
                 write!(formatter, "environment variable {name} must be valid UTF-8")
+            }
+            Self::SpotifyPollTooFrequent => {
+                formatter.write_str("SPOTIFY_POLL_SECS must be at least 5 seconds")
             }
         }
     }
