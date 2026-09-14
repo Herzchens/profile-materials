@@ -375,12 +375,7 @@ fn streak_mascot_data_uri(state: CampfireState) -> &'static str {
     };
 
     cache
-        .get_or_init(|| {
-            format!(
-                "data:image/png;base64,{}",
-                BASE64_STANDARD.encode(asset)
-            )
-        })
+        .get_or_init(|| format!("data:image/png;base64,{}", BASE64_STANDARD.encode(asset)))
         .as_str()
 }
 
