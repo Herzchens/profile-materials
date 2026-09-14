@@ -20,11 +20,25 @@ fn generate_streak_state_previews() {
 
     let mut lit = preview_snapshot();
     lit.contributions.today_contributions = Some(2);
-    write_preview(&output_dir, "github-streak-lit.svg", &lit, 100, "campfire-lit", "lit");
+    write_preview(
+        &output_dir,
+        "github-streak-lit.svg",
+        &lit,
+        100,
+        "campfire-lit",
+        "lit",
+    );
 
     let mut out = preview_snapshot();
     out.contributions.today_contributions = Some(0);
-    write_preview(&output_dir, "github-streak-out.svg", &out, 100, "campfire-out", "out");
+    write_preview(
+        &output_dir,
+        "github-streak-out.svg",
+        &out,
+        100,
+        "campfire-out",
+        "out",
+    );
 
     let unknown = preview_snapshot();
     write_preview(
