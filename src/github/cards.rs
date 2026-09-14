@@ -4,7 +4,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 use super::stats::{GitHubSnapshot, is_stale};
 
-const SVG_REVISION: u8 = 6;
+const SVG_REVISION: u8 = 7;
 const TITLE: &str = "#70A5FD";
 const ICON: &str = "#BF91F3";
 const TEXT: &str = "#38BDAE";
@@ -238,7 +238,7 @@ fn render_streak(snapshot: &GitHubSnapshot, stale: bool) -> String {
     push_streak_defs(&mut body);
 
     body.push_str(
-        r##"<rect width="835" height="370" rx="24" fill="url(#streak-bg)"/><rect x="1" y="1" width="833" height="368" rx="23" fill="none" stroke="#6d5ed0" stroke-opacity=".58" stroke-width="1.5"/><ellipse cx="505" cy="225" rx="168" ry="120" fill="url(#center-ambient)" opacity=".72"/><line x1="210" y1="78" x2="210" y2="318" stroke="url(#divider-left)"/><line x1="625" y1="78" x2="625" y2="318" stroke="url(#divider-right)"/><line x1="245" y1="33" x2="337" y2="33" stroke="#685ac1" stroke-opacity=".42"/><line x1="498" y1="33" x2="590" y2="33" stroke="#685ac1" stroke-opacity=".42"/><text x="417.5" y="40" text-anchor="middle" class="streak-title">Contribution Streak</text><circle cx="82" cy="52" r="1.5" class="star"/><circle cx="183" cy="301" r="1.2" class="star"/><circle cx="652" cy="68" r="1.4" class="star"/><circle cx="780" cy="292" r="1.3" class="star"/><path d="M230 84h10M235 79v10" class="spark"/>"##,
+        r##"<rect width="835" height="370" rx="24" fill="url(#streak-bg)"/><rect x="1" y="1" width="833" height="368" rx="23" fill="none" stroke="#6d5ed0" stroke-opacity=".58" stroke-width="1.5"/><ellipse cx="505" cy="225" rx="168" ry="120" fill="url(#center-ambient)" opacity=".72"/><line x1="210" y1="78" x2="210" y2="318" stroke="url(#divider-left)"/><line x1="625" y1="78" x2="625" y2="318" stroke="url(#divider-right)"/><line x1="245" y1="33" x2="337" y2="33" stroke="#685ac1" stroke-opacity=".42"/><line x1="498" y1="33" x2="590" y2="33" stroke="#685ac1" stroke-opacity=".42"/><text x="417.5" y="40" text-anchor="middle" class="streak-title">Contribution Streak</text><circle cx="82" cy="52" r="1.5" class="star"/><circle cx="183" cy="301" r="1.2" class="star"/><circle cx="652" cy="68" r="1.4" class="star"/><circle cx="780" cy="292" r="1.3" class="star"/>"##,
     );
 
     let total_range = format_date_range(
@@ -259,13 +259,13 @@ fn render_streak(snapshot: &GitHubSnapshot, stale: bool) -> String {
 
     let _ = write!(
         body,
-        r##"<g class="fade"><g class="side-float side-float-left"><text x="105" y="151" text-anchor="middle" class="side-number">{}</text><text x="105" y="187" text-anchor="middle" class="side-label">Total Contributions</text><text x="105" y="216" text-anchor="middle" class="range">{}</text></g></g>"##,
+        r##"<g class="fade"><g class="side-drift-x side-drift-x-left"><g class="side-drift-y side-drift-y-left"><text x="105" y="151" text-anchor="middle" class="side-number">{}</text><text x="105" y="187" text-anchor="middle" class="side-label">Total Contributions</text><text x="105" y="216" text-anchor="middle" class="range">{}</text></g></g></g>"##,
         format_count(snapshot.contributions.total),
         escape_xml(&total_range)
     );
     let _ = write!(
         body,
-        r##"<g class="fade" style="animation-delay:180ms"><g class="side-float side-float-right"><text x="730" y="151" text-anchor="middle" class="side-number">{}</text><text x="730" y="187" text-anchor="middle" class="side-label">Longest Streak</text><text x="730" y="216" text-anchor="middle" class="range">{}</text></g></g>"##,
+        r##"<g class="fade" style="animation-delay:180ms"><g class="side-drift-x side-drift-x-right"><g class="side-drift-y side-drift-y-right"><text x="730" y="151" text-anchor="middle" class="side-number">{}</text><text x="730" y="187" text-anchor="middle" class="side-label">Longest Streak</text><text x="730" y="216" text-anchor="middle" class="range">{}</text></g></g></g>"##,
         snapshot.contributions.longest_streak_days,
         escape_xml(&longest_range)
     );
@@ -332,11 +332,13 @@ fn push_streak_defs(body: &mut String) {
 .range{font:500 12px 'Segoe UI',Ubuntu,Sans-Serif;fill:#46d4cc}
 .current-range{font-size:13px}
 .stale-note{font:500 10px 'Segoe UI',Ubuntu,Sans-Serif;fill:#8d94b8}
-.star{fill:#aa92ff;opacity:.62}.spark{stroke:#aa92ff;stroke-width:1.2;stroke-linecap:round;opacity:.7}
+.star{fill:#aa92ff;opacity:.62}
 .fade{opacity:0;animation:fade-in .48s ease-out forwards}
-.side-float{transform-box:fill-box;transform-origin:center center}
-.side-float-left{animation:side-float-left 5.6s .65s ease-in-out infinite}
-.side-float-right{animation:side-float-right 6.2s .9s ease-in-out infinite}
+.side-drift-x,.side-drift-y{transform-box:fill-box;transform-origin:center center}
+.side-drift-x-left{animation:drift-x-left 11.3s cubic-bezier(.37,0,.63,1) -3.8s infinite alternate}
+.side-drift-y-left{animation:drift-y-left 7.7s cubic-bezier(.37,0,.63,1) -1.9s infinite alternate}
+.side-drift-x-right{animation:drift-x-right 12.9s cubic-bezier(.37,0,.63,1) -5.4s infinite alternate}
+.side-drift-y-right{animation:drift-y-right 8.6s cubic-bezier(.37,0,.63,1) -2.7s infinite alternate}
 .fire-ignite{transform-box:fill-box;transform-origin:center bottom;animation:ignite .78s cubic-bezier(.18,.78,.25,1) both}
 .flame-motion{transform-box:fill-box;transform-origin:center bottom;animation:flame-body 2.8s .78s ease-in-out infinite}
 .flame-outer-motion{transform-box:fill-box;transform-origin:center bottom;animation:flame-outer 2.8s .78s ease-in-out infinite}
@@ -344,8 +346,10 @@ fn push_streak_defs(body: &mut String) {
 .fire-glow-motion{transform-box:fill-box;transform-origin:center;animation:glow-pulse 2.8s .78s ease-in-out infinite}
 .ember{opacity:0;animation:ember-rise 2.2s ease-out infinite}.ember-2{animation-delay:.55s}.ember-3{animation-delay:1.15s}.ember-4{animation-delay:1.6s}
 @keyframes fade-in{from{opacity:0}to{opacity:1}}
-@keyframes side-float-left{0%,100%{transform:translate(0,0)}24%{transform:translate(1px,-2px)}52%{transform:translate(0,-4px)}76%{transform:translate(-1px,-2px)}}
-@keyframes side-float-right{0%,100%{transform:translate(0,0)}27%{transform:translate(-1px,-1px)}53%{transform:translate(1px,-3px)}79%{transform:translate(0,-2px)}}
+@keyframes drift-x-left{from{transform:translateX(-1.2px)}to{transform:translateX(1.2px)}}
+@keyframes drift-y-left{from{transform:translateY(1.2px)}to{transform:translateY(-2.6px)}}
+@keyframes drift-x-right{from{transform:translateX(1.3px)}to{transform:translateX(-1.3px)}}
+@keyframes drift-y-right{from{transform:translateY(-1px)}to{transform:translateY(2.4px)}}
 @keyframes ignite{0%{opacity:.12;transform:translateY(6px) scale(.68,.58)}55%{opacity:1;transform:translateY(-2px) scale(1.06,1.1)}100%{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes flame-body{0%{transform:translateY(0) rotate(-.7deg) scale(1)}45%{transform:translateY(-1.5px) rotate(.8deg) scale(1.015,1.025)}75%{transform:translateY(-.5px) rotate(.15deg) scale(1.008,1.012)}100%{transform:translateY(0) rotate(-.7deg) scale(1)}}
 @keyframes flame-outer{0%{opacity:.97;transform:scale(1)}45%{opacity:1;transform:scale(1.015,1.03)}75%{opacity:.99;transform:scale(1.008,1.015)}100%{opacity:.97;transform:scale(1)}}
@@ -558,13 +562,32 @@ mod tests {
         assert!(card.body().contains("id=\"campfire-lit\""));
         assert!(card.body().contains("@keyframes ignite"));
         assert!(card.body().contains("@keyframes flame-body"));
-        assert!(card.body().contains("@keyframes side-float-left"));
-        assert!(card.body().contains("@keyframes side-float-right"));
-        assert!(card.body().contains("class=\"side-float side-float-left\""));
+        assert!(card.body().contains("@keyframes drift-x-left"));
+        assert!(card.body().contains("@keyframes drift-y-left"));
+        assert!(card.body().contains("@keyframes drift-x-right"));
+        assert!(card.body().contains("@keyframes drift-y-right"));
         assert!(
             card.body()
-                .contains("class=\"side-float side-float-right\"")
+                .contains("class=\"side-drift-x side-drift-x-left\"")
         );
+        assert!(
+            card.body()
+                .contains("class=\"side-drift-y side-drift-y-left\"")
+        );
+        assert!(
+            card.body()
+                .contains("class=\"side-drift-x side-drift-x-right\"")
+        );
+        assert!(
+            card.body()
+                .contains("class=\"side-drift-y side-drift-y-right\"")
+        );
+        assert!(card.body().contains("cubic-bezier(.37,0,.63,1)"));
+        assert!(card.body().contains("infinite alternate"));
+        assert!(!card.body().contains("@keyframes side-float-left"));
+        assert!(!card.body().contains("@keyframes side-float-right"));
+        assert!(!card.body().contains("class=\"spark\""));
+        assert!(!card.body().contains("M230 84h10M235 79v10"));
         assert!(card.body().contains("class=\"flame-motion\""));
         assert!(card.body().contains("scale(1.22 1)"));
         assert!(card.body().contains("data:image/png;base64,"));
