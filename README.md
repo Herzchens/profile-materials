@@ -6,7 +6,7 @@ Source for the ItzHerzchen profile service and profile assets.
 
 [![Live presence card](https://profile.tailed8451.ts.net/v1/svg/presence.svg?compat=activity-cards)](https://profile.tailed8451.ts.net/presence)
 
-[![Contribution streak compatibility preview](https://profile.tailed8451.ts.net/v1/svg/github-streak.svg?compat=campfire-v1)](https://profile.tailed8451.ts.net/v1/svg/github-streak.svg?compat=campfire-v1)
+[![Contribution streak compatibility preview](https://profile.tailed8451.ts.net/v1/svg/github-streak.svg?compat=campfire-v3)](https://profile.tailed8451.ts.net/v1/svg/github-streak.svg?compat=campfire-v3)
 
 The streak preview intentionally embeds the live origin URL through normal GitHub Markdown so GitHub Camo compatibility can be checked after the branch build is deployed for testing. The origin SVG embeds its mascot raster asset directly and uses self-contained SVG animation for the lit campfire state.
 
