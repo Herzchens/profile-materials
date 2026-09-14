@@ -4,14 +4,16 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 use super::stats::{GitHubSnapshot, is_stale};
 
-const SVG_REVISION: u8 = 4;
+const SVG_REVISION: u8 = 5;
 const TITLE: &str = "#70A5FD";
 const ICON: &str = "#BF91F3";
 const TEXT: &str = "#38BDAE";
 const BG: &str = "#1A1B27";
 const MUTED: &str = "#A8A8A8";
-const STREAK_MASCOT: &[u8] = include_bytes!("../../assets/streak/mascot-campfire.png");
-static STREAK_MASCOT_DATA_URI: OnceLock<String> = OnceLock::new();
+const STREAK_MASCOT_LIT: &[u8] = include_bytes!("../../assets/streak/mascot-campfire-lit.png");
+const STREAK_MASCOT_OUT: &[u8] = include_bytes!("../../assets/streak/mascot-campfire-out.png");
+static STREAK_MASCOT_LIT_DATA_URI: OnceLock<String> = OnceLock::new();
+static STREAK_MASCOT_OUT_DATA_URI: OnceLock<String> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GitHubCardKind {
@@ -268,14 +270,19 @@ fn render_streak(snapshot: &GitHubSnapshot, stale: bool) -> String {
         escape_xml(&longest_range)
     );
 
-    let mascot_uri = streak_mascot_data_uri();
+    let state = campfire_state(snapshot, stale);
+    let mascot_uri = streak_mascot_data_uri(state);
+    let mascot_state = if state == CampfireState::Lit {
+        "lit"
+    } else {
+        "out"
+    };
     let _ = write!(
         body,
-        r##"<image x="222" y="55" width="292" height="292" href="{}" preserveAspectRatio="xMidYMid meet" opacity=".98"/>"##,
+        r##"<image data-mascot-state="{mascot_state}" x="222" y="55" width="292" height="292" href="{}" preserveAspectRatio="xMidYMid meet" opacity=".98"/>"##,
         escape_xml(mascot_uri)
     );
 
-    let state = campfire_state(snapshot, stale);
     render_campfire(&mut body, state);
     let current_class = if state == CampfireState::Lit {
         "current-number current-number-lit"
@@ -359,12 +366,19 @@ fn render_campfire(body: &mut String, state: CampfireState) {
     body.push_str("</g>");
 }
 
-fn streak_mascot_data_uri() -> &'static str {
-    STREAK_MASCOT_DATA_URI
+fn streak_mascot_data_uri(state: CampfireState) -> &'static str {
+    let (asset, cache) = match state {
+        CampfireState::Lit => (STREAK_MASCOT_LIT, &STREAK_MASCOT_LIT_DATA_URI),
+        CampfireState::Out | CampfireState::Unknown => {
+            (STREAK_MASCOT_OUT, &STREAK_MASCOT_OUT_DATA_URI)
+        }
+    };
+
+    cache
         .get_or_init(|| {
             format!(
                 "data:image/png;base64,{}",
-                BASE64_STANDARD.encode(STREAK_MASCOT)
+                BASE64_STANDARD.encode(asset)
             )
         })
         .as_str()
@@ -544,9 +558,10 @@ mod tests {
         assert!(card.body().contains("class=\"flame-motion\""));
         assert!(card.body().contains("scale(1.22 1)"));
         assert!(card.body().contains("data:image/png;base64,"));
+        assert!(card.body().contains("data-mascot-state=\"lit\""));
         assert!(
             card.body()
-                .contains("<image x=\"222\" y=\"55\" width=\"292\" height=\"292\"")
+                .contains("x=\"222\" y=\"55\" width=\"292\" height=\"292\"")
         );
         assert!(!card.body().contains("mascot-mask"));
         assert!(card.body().contains(">Sep 8 – 14</text>"));
@@ -564,6 +579,7 @@ mod tests {
         );
         assert!(card.body().contains("id=\"campfire-out\""));
         assert!(!card.body().contains("id=\"campfire-lit\""));
+        assert!(card.body().contains("data-mascot-state=\"out\""));
         assert!(card.body().contains(">7</text>"));
     }
 
@@ -576,6 +592,7 @@ mod tests {
             Duration::from_secs(60),
         );
         assert!(card.body().contains("id=\"campfire-unknown\""));
+        assert!(card.body().contains("data-mascot-state=\"out\""));
         assert!(card.body().contains("last known"));
     }
 
