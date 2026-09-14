@@ -4,7 +4,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 use super::stats::{GitHubSnapshot, is_stale};
 
-const SVG_REVISION: u8 = 7;
+const SVG_REVISION: u8 = 8;
 const TITLE: &str = "#70A5FD";
 const ICON: &str = "#BF91F3";
 const TEXT: &str = "#38BDAE";
@@ -259,13 +259,13 @@ fn render_streak(snapshot: &GitHubSnapshot, stale: bool) -> String {
 
     let _ = write!(
         body,
-        r##"<g class="fade"><g class="side-drift-x side-drift-x-left"><g class="side-drift-y side-drift-y-left"><text x="105" y="151" text-anchor="middle" class="side-number">{}</text><text x="105" y="187" text-anchor="middle" class="side-label">Total Contributions</text><text x="105" y="216" text-anchor="middle" class="range">{}</text></g></g></g>"##,
+        r##"<g class="fade"><g class="side-orbit side-orbit-left"><animateMotion path="M0 -3C1.8 -3 3.2 -1.6 3.2 .2C3.2 2 2 3.2 .4 3.2C-1.7 3.2 -3.4 2.1 -3.4 .5C-3.4 -1.5 -1.8 -3 0 -3" dur="23.6s" begin="-7.4s" repeatCount="indefinite" rotate="0" calcMode="paced"/><text x="105" y="151" text-anchor="middle" class="side-number">{}</text><text x="105" y="187" text-anchor="middle" class="side-label">Total Contributions</text><text x="105" y="216" text-anchor="middle" class="range">{}</text></g></g>"##,
         format_count(snapshot.contributions.total),
         escape_xml(&total_range)
     );
     let _ = write!(
         body,
-        r##"<g class="fade" style="animation-delay:180ms"><g class="side-drift-x side-drift-x-right"><g class="side-drift-y side-drift-y-right"><text x="730" y="151" text-anchor="middle" class="side-number">{}</text><text x="730" y="187" text-anchor="middle" class="side-label">Longest Streak</text><text x="730" y="216" text-anchor="middle" class="range">{}</text></g></g></g>"##,
+        r##"<g class="fade" style="animation-delay:180ms"><g class="side-orbit side-orbit-right"><animateMotion path="M0 2.8C-1.8 2.8 -3.3 1.8 -3.3 .4C-3.3 -1.7 -2.1 -3.1 -.8 -3.1C1.3 -3.1 3.5 -1.8 3.5 -.3C3.5 1.5 1.9 2.8 0 2.8" dur="27.1s" begin="-15.2s" repeatCount="indefinite" rotate="0" calcMode="paced"/><text x="730" y="151" text-anchor="middle" class="side-number">{}</text><text x="730" y="187" text-anchor="middle" class="side-label">Longest Streak</text><text x="730" y="216" text-anchor="middle" class="range">{}</text></g></g>"##,
         snapshot.contributions.longest_streak_days,
         escape_xml(&longest_range)
     );
@@ -334,11 +334,6 @@ fn push_streak_defs(body: &mut String) {
 .stale-note{font:500 10px 'Segoe UI',Ubuntu,Sans-Serif;fill:#8d94b8}
 .star{fill:#aa92ff;opacity:.62}
 .fade{opacity:0;animation:fade-in .48s ease-out forwards}
-.side-drift-x,.side-drift-y{transform-box:fill-box;transform-origin:center center}
-.side-drift-x-left{animation:drift-x-left 11.3s cubic-bezier(.37,0,.63,1) -3.8s infinite alternate}
-.side-drift-y-left{animation:drift-y-left 7.7s cubic-bezier(.37,0,.63,1) -1.9s infinite alternate}
-.side-drift-x-right{animation:drift-x-right 12.9s cubic-bezier(.37,0,.63,1) -5.4s infinite alternate}
-.side-drift-y-right{animation:drift-y-right 8.6s cubic-bezier(.37,0,.63,1) -2.7s infinite alternate}
 .fire-ignite{transform-box:fill-box;transform-origin:center bottom;animation:ignite .78s cubic-bezier(.18,.78,.25,1) both}
 .flame-motion{transform-box:fill-box;transform-origin:center bottom;animation:flame-body 2.8s .78s ease-in-out infinite}
 .flame-outer-motion{transform-box:fill-box;transform-origin:center bottom;animation:flame-outer 2.8s .78s ease-in-out infinite}
@@ -346,10 +341,6 @@ fn push_streak_defs(body: &mut String) {
 .fire-glow-motion{transform-box:fill-box;transform-origin:center;animation:glow-pulse 2.8s .78s ease-in-out infinite}
 .ember{opacity:0;animation:ember-rise 2.2s ease-out infinite}.ember-2{animation-delay:.55s}.ember-3{animation-delay:1.15s}.ember-4{animation-delay:1.6s}
 @keyframes fade-in{from{opacity:0}to{opacity:1}}
-@keyframes drift-x-left{from{transform:translateX(-1.2px)}to{transform:translateX(1.2px)}}
-@keyframes drift-y-left{from{transform:translateY(1.2px)}to{transform:translateY(-2.6px)}}
-@keyframes drift-x-right{from{transform:translateX(1.3px)}to{transform:translateX(-1.3px)}}
-@keyframes drift-y-right{from{transform:translateY(-1px)}to{transform:translateY(2.4px)}}
 @keyframes ignite{0%{opacity:.12;transform:translateY(6px) scale(.68,.58)}55%{opacity:1;transform:translateY(-2px) scale(1.06,1.1)}100%{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes flame-body{0%{transform:translateY(0) rotate(-.7deg) scale(1)}45%{transform:translateY(-1.5px) rotate(.8deg) scale(1.015,1.025)}75%{transform:translateY(-.5px) rotate(.15deg) scale(1.008,1.012)}100%{transform:translateY(0) rotate(-.7deg) scale(1)}}
 @keyframes flame-outer{0%{opacity:.97;transform:scale(1)}45%{opacity:1;transform:scale(1.015,1.03)}75%{opacity:.99;transform:scale(1.008,1.015)}100%{opacity:.97;transform:scale(1)}}
@@ -562,30 +553,19 @@ mod tests {
         assert!(card.body().contains("id=\"campfire-lit\""));
         assert!(card.body().contains("@keyframes ignite"));
         assert!(card.body().contains("@keyframes flame-body"));
-        assert!(card.body().contains("@keyframes drift-x-left"));
-        assert!(card.body().contains("@keyframes drift-y-left"));
-        assert!(card.body().contains("@keyframes drift-x-right"));
-        assert!(card.body().contains("@keyframes drift-y-right"));
-        assert!(
-            card.body()
-                .contains("class=\"side-drift-x side-drift-x-left\"")
-        );
-        assert!(
-            card.body()
-                .contains("class=\"side-drift-y side-drift-y-left\"")
-        );
-        assert!(
-            card.body()
-                .contains("class=\"side-drift-x side-drift-x-right\"")
-        );
-        assert!(
-            card.body()
-                .contains("class=\"side-drift-y side-drift-y-right\"")
-        );
-        assert!(card.body().contains("cubic-bezier(.37,0,.63,1)"));
-        assert!(card.body().contains("infinite alternate"));
-        assert!(!card.body().contains("@keyframes side-float-left"));
-        assert!(!card.body().contains("@keyframes side-float-right"));
+        assert!(card.body().contains("class=\"side-orbit side-orbit-left\""));
+        assert!(card.body().contains("class=\"side-orbit side-orbit-right\""));
+        assert_eq!(card.body().matches("<animateMotion").count(), 2);
+        assert!(card.body().contains("calcMode=\"paced\""));
+        assert!(card.body().contains("repeatCount=\"indefinite\""));
+        assert!(card.body().contains("rotate=\"0\""));
+        assert!(card.body().contains("dur=\"23.6s\""));
+        assert!(card.body().contains("dur=\"27.1s\""));
+        assert!(!card.body().contains("side-drift-"));
+        assert!(!card.body().contains("@keyframes drift-x-left"));
+        assert!(!card.body().contains("@keyframes drift-y-left"));
+        assert!(!card.body().contains("@keyframes drift-x-right"));
+        assert!(!card.body().contains("@keyframes drift-y-right"));
         assert!(!card.body().contains("class=\"spark\""));
         assert!(!card.body().contains("M230 84h10M235 79v10"));
         assert!(card.body().contains("class=\"flame-motion\""));
