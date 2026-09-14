@@ -554,7 +554,10 @@ mod tests {
         assert!(card.body().contains("@keyframes ignite"));
         assert!(card.body().contains("@keyframes flame-body"));
         assert!(card.body().contains("class=\"side-orbit side-orbit-left\""));
-        assert!(card.body().contains("class=\"side-orbit side-orbit-right\""));
+        assert!(
+            card.body()
+                .contains("class=\"side-orbit side-orbit-right\"")
+        );
         assert_eq!(card.body().matches("<animateMotion").count(), 2);
         assert!(card.body().contains("calcMode=\"paced\""));
         assert!(card.body().contains("repeatCount=\"indefinite\""));
