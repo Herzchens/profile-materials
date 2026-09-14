@@ -6,6 +6,10 @@ Source for the ItzHerzchen profile service and profile assets.
 
 [![Live presence card](https://profile.tailed8451.ts.net/v1/svg/presence.svg?compat=activity-cards)](https://profile.tailed8451.ts.net/presence)
 
+[![Contribution streak compatibility preview](https://profile.tailed8451.ts.net/v1/svg/github-streak.svg?compat=campfire-v1)](https://profile.tailed8451.ts.net/v1/svg/github-streak.svg?compat=campfire-v1)
+
+The streak preview intentionally embeds the live origin URL through normal GitHub Markdown so GitHub Camo compatibility can be checked after the branch build is deployed for testing. The origin SVG embeds its mascot raster asset directly and uses self-contained SVG animation for the lit campfire state.
+
 The service reads Discord presence through an official bot, keeps the last known presence across restarts, streams changes over SSE, and exposes health endpoints for deployment. Discord activity artwork is resolved into usable image URLs with deterministic fallbacks. Spotify playback is collected independently through the Spotify Web API when configured; Discord Spotify RPC is excluded from the presentation layer so Spotify visibility does not depend on Discord presence propagation.
 
 It also collects GitHub profile statistics and serves SVG cards for GitHub stats, top languages, contribution streaks, Discord presence, Spotify activity, and the production profile hero. The GitHub cards follow the visual language and statistics semantics of the profile's existing GitHub Readme Stats setup while using this service's own refresh, revision, and last-known-good state.
@@ -94,7 +98,7 @@ Private repository details are not published by the service. Their names, URLs, 
 
 `GITHUB_FEATURED_REPOS` chooses public project cards in the order listed. When it is not set, the service selects up to three eligible public repositories by stars, then recent push time. A failed GitHub refresh keeps the last-known-good snapshot; old snapshots are marked stale instead of making the card disappear.
 
-`/v1/svg/github-stats.svg` is the TokyoNight-style overall stats card, `/v1/svg/github-languages.svg` is the compact top-languages card, and `/v1/svg/github-streak.svg` is the transparent TokyoNight-duo-style streak card. `/v1/svg/github.svg` keeps the broader combined GitHub summary view for compatibility. The presence card keeps all distinct current activities after same-name duplicate selection, while the Spotify endpoint has `mini`, `compact`, and `wide` layouts. `hero-test.svg` remains a plain diagnostic render with visible revisions for cache experiments.
+`/v1/svg/github-stats.svg` is the TokyoNight-style overall stats card, `/v1/svg/github-languages.svg` is the compact top-languages card, and `/v1/svg/github-streak.svg` is the campfire-style contribution streak card. The streak card embeds the authored mascot asset, derives contribution ranges from the GitHub contribution calendar, keeps the current streak through an empty current day, and changes the campfire between lit, extinguished, and neutral states based on today's contribution state and snapshot freshness. `/v1/svg/github.svg` keeps the broader combined GitHub summary view for compatibility. The presence card keeps all distinct current activities after same-name duplicate selection, while the Spotify endpoint has `mini`, `compact`, and `wide` layouts. `hero-test.svg` remains a plain diagnostic render with visible revisions for cache experiments.
 
 SVG responses use `ETag` revalidation. Dynamic presence and GitHub cards use their source revisions to avoid unnecessary rerenders, while the production hero has a stable static ETag because its body does not depend on presence state. A matching `If-None-Match` request receives `304 Not Modified`.
 
