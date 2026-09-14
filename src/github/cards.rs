@@ -4,7 +4,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 use super::stats::{GitHubSnapshot, is_stale};
 
-const SVG_REVISION: u8 = 5;
+const SVG_REVISION: u8 = 6;
 const TITLE: &str = "#70A5FD";
 const ICON: &str = "#BF91F3";
 const TEXT: &str = "#38BDAE";
@@ -259,13 +259,13 @@ fn render_streak(snapshot: &GitHubSnapshot, stale: bool) -> String {
 
     let _ = write!(
         body,
-        r##"<g class="fade"><text x="105" y="151" text-anchor="middle" class="side-number">{}</text><text x="105" y="187" text-anchor="middle" class="side-label">Total Contributions</text><text x="105" y="216" text-anchor="middle" class="range">{}</text></g>"##,
+        r##"<g class="fade"><g class="side-float side-float-left"><text x="105" y="151" text-anchor="middle" class="side-number">{}</text><text x="105" y="187" text-anchor="middle" class="side-label">Total Contributions</text><text x="105" y="216" text-anchor="middle" class="range">{}</text></g></g>"##,
         format_count(snapshot.contributions.total),
         escape_xml(&total_range)
     );
     let _ = write!(
         body,
-        r##"<g class="fade" style="animation-delay:180ms"><text x="730" y="151" text-anchor="middle" class="side-number">{}</text><text x="730" y="187" text-anchor="middle" class="side-label">Longest Streak</text><text x="730" y="216" text-anchor="middle" class="range">{}</text></g>"##,
+        r##"<g class="fade" style="animation-delay:180ms"><g class="side-float side-float-right"><text x="730" y="151" text-anchor="middle" class="side-number">{}</text><text x="730" y="187" text-anchor="middle" class="side-label">Longest Streak</text><text x="730" y="216" text-anchor="middle" class="range">{}</text></g></g>"##,
         snapshot.contributions.longest_streak_days,
         escape_xml(&longest_range)
     );
@@ -287,7 +287,7 @@ fn render_streak(snapshot: &GitHubSnapshot, stale: bool) -> String {
     let current_class = if state == CampfireState::Lit {
         "current-number current-number-lit"
     } else {
-        "current-number"
+        "current-number current-number-muted"
     };
     let _ = write!(
         body,
@@ -315,29 +315,37 @@ fn push_streak_defs(body: &mut String) {
 <linearGradient id="flame-outer" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff6b3d"/><stop offset=".52" stop-color="#ff9f43"/><stop offset="1" stop-color="#ffd66b"/></linearGradient>
 <linearGradient id="flame-inner" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#8e5cff"/><stop offset=".54" stop-color="#ff7f50"/><stop offset="1" stop-color="#fff0a7"/></linearGradient>
 <linearGradient id="number-gradient" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#b68cff"/><stop offset=".55" stop-color="#d48cff"/><stop offset="1" stop-color="#ffbd68"/></linearGradient>
+<linearGradient id="smoke-plume" x1="0" y1="6" x2="0" y2="-78" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#777d91" stop-opacity=".34"/><stop offset=".48" stop-color="#9299b1" stop-opacity=".22"/><stop offset="1" stop-color="#c0c6db" stop-opacity="0"/></linearGradient>
+<linearGradient id="smoke-wisp" x1="0" y1="5" x2="0" y2="-66" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#6f758a" stop-opacity=".26"/><stop offset=".5" stop-color="#9ba2ba" stop-opacity=".16"/><stop offset="1" stop-color="#c4cadc" stop-opacity="0"/></linearGradient>
 <filter id="fire-glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="10"/></filter>
 <filter id="number-glow" x="-30%" y="-70%" width="160%" height="240%"><feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#ff9b55" flood-opacity=".42"/></filter>
+<filter id="smoke-soft" x="-40%" y="-30%" width="180%" height="170%"><feGaussianBlur stdDeviation="1.35"/></filter>
 </defs>
 <style>
 .streak-title{font:700 19px 'Segoe UI',Ubuntu,Sans-Serif;fill:#eef0ff;letter-spacing:.2px}
 .side-number{font:700 39px 'Segoe UI',Ubuntu,Sans-Serif;fill:#76a7ff}
 .side-label{font:600 17px 'Segoe UI',Ubuntu,Sans-Serif;fill:#76a7ff}
-.current-number{font:800 48px 'Segoe UI',Ubuntu,Sans-Serif;fill:url(#number-gradient)}
-.current-number-lit{filter:url(#number-glow)}
+.current-number{font:800 48px 'Segoe UI',Ubuntu,Sans-Serif}
+.current-number-lit{fill:url(#number-gradient);filter:url(#number-glow)}
+.current-number-muted{fill:#8d93a8}
 .current-label{font:700 18px 'Segoe UI',Ubuntu,Sans-Serif;fill:#c38cff}
 .range{font:500 12px 'Segoe UI',Ubuntu,Sans-Serif;fill:#46d4cc}
 .current-range{font-size:13px}
 .stale-note{font:500 10px 'Segoe UI',Ubuntu,Sans-Serif;fill:#8d94b8}
 .star{fill:#aa92ff;opacity:.62}.spark{stroke:#aa92ff;stroke-width:1.2;stroke-linecap:round;opacity:.7}
 .fade{opacity:0;animation:fade-in .48s ease-out forwards}
+.side-float{transform-box:fill-box;transform-origin:center center}
+.side-float-left{animation:side-float-left 5.6s .65s ease-in-out infinite}
+.side-float-right{animation:side-float-right 6.2s .9s ease-in-out infinite}
 .fire-ignite{transform-box:fill-box;transform-origin:center bottom;animation:ignite .78s cubic-bezier(.18,.78,.25,1) both}
 .flame-motion{transform-box:fill-box;transform-origin:center bottom;animation:flame-body 2.8s .78s ease-in-out infinite}
 .flame-outer-motion{transform-box:fill-box;transform-origin:center bottom;animation:flame-outer 2.8s .78s ease-in-out infinite}
 .flame-inner-motion{transform-box:fill-box;transform-origin:center bottom;animation:flame-inner 2.8s .78s ease-in-out infinite}
 .fire-glow-motion{transform-box:fill-box;transform-origin:center;animation:glow-pulse 2.8s .78s ease-in-out infinite}
 .ember{opacity:0;animation:ember-rise 2.2s ease-out infinite}.ember-2{animation-delay:.55s}.ember-3{animation-delay:1.15s}.ember-4{animation-delay:1.6s}
-.smoke{fill:none;stroke:#8990a6;stroke-width:3;stroke-linecap:round;opacity:.28}
 @keyframes fade-in{from{opacity:0}to{opacity:1}}
+@keyframes side-float-left{0%,100%{transform:translate(0,0)}24%{transform:translate(1px,-2px)}52%{transform:translate(0,-4px)}76%{transform:translate(-1px,-2px)}}
+@keyframes side-float-right{0%,100%{transform:translate(0,0)}27%{transform:translate(-1px,-1px)}53%{transform:translate(1px,-3px)}79%{transform:translate(0,-2px)}}
 @keyframes ignite{0%{opacity:.12;transform:translateY(6px) scale(.68,.58)}55%{opacity:1;transform:translateY(-2px) scale(1.06,1.1)}100%{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes flame-body{0%{transform:translateY(0) rotate(-.7deg) scale(1)}45%{transform:translateY(-1.5px) rotate(.8deg) scale(1.015,1.025)}75%{transform:translateY(-.5px) rotate(.15deg) scale(1.008,1.012)}100%{transform:translateY(0) rotate(-.7deg) scale(1)}}
 @keyframes flame-outer{0%{opacity:.97;transform:scale(1)}45%{opacity:1;transform:scale(1.015,1.03)}75%{opacity:.99;transform:scale(1.008,1.015)}100%{opacity:.97;transform:scale(1)}}
@@ -357,10 +365,10 @@ fn render_campfire(body: &mut String, state: CampfireState) {
             r##"<g id="campfire-lit"><ellipse class="fire-glow-motion" cx="0" cy="0" rx="64" ry="45" fill="#ff7b4d" opacity=".42" filter="url(#fire-glow)"/><g class="fire-ignite"><g transform="scale(1.22 1)"><g class="flame-motion"><g class="flame-outer-motion"><path d="M0 19C-26 12-31-10-18-29C-10-41-8-52-7-65C7-55 16-43 15-29C25-23 31-11 26 2C22 13 12 19 0 19Z" fill="url(#flame-outer)"/></g><g class="flame-inner-motion"><path d="M1 16C-13 10-16-3-9-14C-3-23-2-30 0-39C10-30 15-20 11-11C18-6 18 5 13 11C10 14 6 16 1 16Z" fill="url(#flame-inner)"/></g></g></g></g><circle class="ember" cx="-18" cy="-19" r="3" fill="#ffcf66"/><circle class="ember ember-2" cx="14" cy="-14" r="2.5" fill="#ff8b4b"/><circle class="ember ember-3" cx="-4" cy="-24" r="2" fill="#ffd979"/><circle class="ember ember-4" cx="22" cy="-9" r="2" fill="#f7a5ff"/></g>"##,
         ),
         CampfireState::Out => body.push_str(
-            r##"<g id="campfire-out"><ellipse cx="0" cy="4" rx="31" ry="12" fill="#424550" opacity=".5"/><path class="smoke" d="M-8 -2C-20-18 4-23-7-41C-12-50-7-56 1-62"/><path class="smoke" d="M10 1C20-14 3-24 14-37C20-44 20-51 14-58"/><circle cx="-6" cy="-1" r="3" fill="#777b86" opacity=".55"/></g>"##,
+            r##"<g id="campfire-out"><ellipse cx="0" cy="4" rx="31" ry="12" fill="#424550" opacity=".46"/><path id="smoke-plume-main" d="M-7 3C-16-8-14-19-4-27C5-35 7-43 2-51C-4-60-1-69 8-76C5-65 15-59 14-48C13-36 2-32 1-22C0-13 8-7 7 3Z" fill="url(#smoke-plume)" filter="url(#smoke-soft)"/><path id="smoke-plume-side" d="M13 5C6-5 7-14 14-22C21-30 22-38 17-45C13-51 15-58 21-63C19-54 27-49 25-40C23-31 15-28 15-20C15-11 20-4 19 5Z" fill="url(#smoke-wisp)" filter="url(#smoke-soft)"/><circle cx="-6" cy="-1" r="3" fill="#777b86" opacity=".5"/></g>"##,
         ),
         CampfireState::Unknown => body.push_str(
-            r##"<g id="campfire-unknown"><ellipse cx="0" cy="2" rx="40" ry="15" fill="#4d4962" opacity=".36"/><g transform="scale(1.18 1)"><path d="M0 12C-12 7-15-4-9-14C-3-23-2-30 0-36C10-28 14-18 10-9C16-4 15 5 10 9C7 11 4 12 0 12Z" fill="#77738c" opacity=".62"/></g><path class="smoke" d="M-4 -18C-15-31 3-38-4-51"/></g>"##,
+            r##"<g id="campfire-unknown"><ellipse cx="0" cy="3" rx="34" ry="13" fill="#4d4962" opacity=".34"/><path id="smoke-plume-main-unknown" d="M-6 3C-14-7-13-17-4-25C4-32 6-40 2-47C-3-55-1-63 7-69C4-60 13-54 12-44C11-34 2-29 1-20C0-12 7-6 6 3Z" fill="url(#smoke-plume)" opacity=".62" filter="url(#smoke-soft)"/><path d="M12 5C7-4 8-13 14-20C19-27 20-34 17-40C14-46 15-52 20-57C18-49 24-45 23-37C21-29 15-26 15-18C15-10 19-4 18 5Z" fill="url(#smoke-wisp)" opacity=".46" filter="url(#smoke-soft)"/></g>"##,
         ),
     }
     body.push_str("</g>");
@@ -550,6 +558,10 @@ mod tests {
         assert!(card.body().contains("id=\"campfire-lit\""));
         assert!(card.body().contains("@keyframes ignite"));
         assert!(card.body().contains("@keyframes flame-body"));
+        assert!(card.body().contains("@keyframes side-float-left"));
+        assert!(card.body().contains("@keyframes side-float-right"));
+        assert!(card.body().contains("class=\"side-float side-float-left\""));
+        assert!(card.body().contains("class=\"side-float side-float-right\""));
         assert!(card.body().contains("class=\"flame-motion\""));
         assert!(card.body().contains("scale(1.22 1)"));
         assert!(card.body().contains("data:image/png;base64,"));
@@ -574,7 +586,14 @@ mod tests {
         );
         assert!(card.body().contains("id=\"campfire-out\""));
         assert!(!card.body().contains("id=\"campfire-lit\""));
+        assert!(card.body().contains("id=\"smoke-plume-main\""));
+        assert!(card.body().contains("id=\"smoke-plume-side\""));
         assert!(card.body().contains("data-mascot-state=\"out\""));
+        assert!(
+            card.body()
+                .contains("class=\"current-number current-number-muted\"")
+        );
+        assert!(!card.body().contains("animation:smoke"));
         assert!(card.body().contains(">7</text>"));
     }
 
@@ -587,7 +606,12 @@ mod tests {
             Duration::from_secs(60),
         );
         assert!(card.body().contains("id=\"campfire-unknown\""));
+        assert!(card.body().contains("id=\"smoke-plume-main-unknown\""));
         assert!(card.body().contains("data-mascot-state=\"out\""));
+        assert!(
+            card.body()
+                .contains("class=\"current-number current-number-muted\"")
+        );
         assert!(card.body().contains("last known"));
     }
 
