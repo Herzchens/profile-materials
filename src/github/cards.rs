@@ -1,13 +1,17 @@
-use std::{fmt::Write as _, time::Duration};
+use std::{fmt::Write as _, sync::OnceLock, time::Duration};
+
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 use super::stats::{GitHubSnapshot, is_stale};
 
-const SVG_REVISION: u8 = 1;
+const SVG_REVISION: u8 = 2;
 const TITLE: &str = "#70A5FD";
 const ICON: &str = "#BF91F3";
 const TEXT: &str = "#38BDAE";
 const BG: &str = "#1A1B27";
 const MUTED: &str = "#A8A8A8";
+const STREAK_MASCOT: &[u8] = include_bytes!("../../assets/streak/mascot-campfire.png");
+static STREAK_MASCOT_DATA_URI: OnceLock<String> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GitHubCardKind {
@@ -29,7 +33,7 @@ impl GitHubCardKind {
         match self {
             Self::Stats => (437, 195),
             Self::Languages => (300, 340),
-            Self::Streak => (495, 195),
+            Self::Streak => (835, 370),
         }
     }
 }
@@ -208,46 +212,213 @@ fn render_languages(snapshot: &GitHubSnapshot, stale: bool) -> String {
     body
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CampfireState {
+    Lit,
+    Out,
+    Unknown,
+}
+
+fn campfire_state(snapshot: &GitHubSnapshot, stale: bool) -> CampfireState {
+    if stale {
+        return CampfireState::Unknown;
+    }
+    match snapshot.contributions.today_contributions {
+        Some(count) if count > 0 => CampfireState::Lit,
+        Some(_) => CampfireState::Out,
+        None => CampfireState::Unknown,
+    }
+}
+
 fn render_streak(snapshot: &GitHubSnapshot, stale: bool) -> String {
-    let mut body = String::with_capacity(6_000);
-    push_open(&mut body, 495, 195, "GitHub contribution streak");
+    let mut body = String::with_capacity(54_000);
+    push_open(&mut body, 835, 370, "GitHub contribution streak");
+    push_streak_defs(&mut body);
+
     body.push_str(
-        r##"<style>
-        .num{font:600 28px 'Segoe UI',Ubuntu,Sans-Serif;fill:#70A5FD}
-        .current{font:700 30px 'Segoe UI',Ubuntu,Sans-Serif;fill:#BF91F3}
-        .label{font:600 14px 'Segoe UI',Ubuntu,Sans-Serif;fill:#70A5FD}
-        .current-label{font:600 14px 'Segoe UI',Ubuntu,Sans-Serif;fill:#BF91F3}
-        .date{font:400 12px 'Segoe UI',Ubuntu,Sans-Serif;fill:#38BDAE}
-        .stale{font:400 10px 'Segoe UI',Ubuntu,Sans-Serif;fill:#A8A8A8}
-        @keyframes fade{from{opacity:0}to{opacity:1}}.fade{opacity:0;animation:fade .45s ease-out forwards}
-        </style>
-        <line x1="165" y1="32" x2="165" y2="163" stroke="#A8A8A8" stroke-opacity=".24"/>
-        <line x1="330" y1="32" x2="330" y2="163" stroke="#A8A8A8" stroke-opacity=".24"/>"##,
+        r##"<rect width="835" height="370" rx="24" fill="url(#streak-bg)"/><rect x="1" y="1" width="833" height="368" rx="23" fill="none" stroke="#6d5ed0" stroke-opacity=".58" stroke-width="1.5"/><ellipse cx="505" cy="225" rx="168" ry="120" fill="url(#center-ambient)" opacity=".72"/><line x1="210" y1="78" x2="210" y2="318" stroke="url(#divider-left)"/><line x1="625" y1="78" x2="625" y2="318" stroke="url(#divider-right)"/><line x1="245" y1="33" x2="337" y2="33" stroke="#685ac1" stroke-opacity=".42"/><line x1="498" y1="33" x2="590" y2="33" stroke="#685ac1" stroke-opacity=".42"/><text x="417.5" y="40" text-anchor="middle" class="streak-title">Contribution Streak</text><circle cx="82" cy="52" r="1.5" class="star"/><circle cx="183" cy="301" r="1.2" class="star"/><circle cx="652" cy="68" r="1.4" class="star"/><circle cx="780" cy="292" r="1.3" class="star"/><path d="M230 84h10M235 79v10" class="spark"/>"##,
+    );
+
+    let total_range = format_date_range(
+        snapshot.contributions.calendar_start.as_deref(),
+        snapshot.contributions.calendar_end.as_deref(),
+        true,
+    );
+    let current_range = format_date_range(
+        snapshot.contributions.current_streak_start.as_deref(),
+        snapshot.contributions.current_streak_end.as_deref(),
+        false,
+    );
+    let longest_range = format_date_range(
+        snapshot.contributions.longest_streak_start.as_deref(),
+        snapshot.contributions.longest_streak_end.as_deref(),
+        false,
     );
 
     let _ = write!(
         body,
-        r##"<g class="fade"><text x="82.5" y="78" text-anchor="middle" class="num">{}</text><text x="82.5" y="108" text-anchor="middle" class="label">Total Contributions</text><text x="82.5" y="132" text-anchor="middle" class="date">last 12 months</text></g>"##,
-        format_count(snapshot.contributions.total)
+        r##"<g class="fade"><text x="105" y="151" text-anchor="middle" class="side-number">{}</text><text x="105" y="187" text-anchor="middle" class="side-label">Total Contributions</text><text x="105" y="216" text-anchor="middle" class="range">{}</text></g>"##,
+        format_count(snapshot.contributions.total),
+        escape_xml(&total_range)
     );
     let _ = write!(
         body,
-        r##"<g class="fade" style="animation-delay:120ms"><circle cx="247.5" cy="74" r="42" fill="none" stroke="#70A5FD" stroke-width="6" stroke-opacity=".25"/><path d="M247.5 25 A49 49 0 0 1 289 99" fill="none" stroke="#70A5FD" stroke-width="6" stroke-linecap="round"/><text x="247.5" y="83" text-anchor="middle" class="current">{}</text><text x="247.5" y="132" text-anchor="middle" class="current-label">Current Streak</text><text x="247.5" y="154" text-anchor="middle" class="date">days</text></g>"##,
-        snapshot.contributions.current_streak_days
+        r##"<g class="fade" style="animation-delay:180ms"><text x="730" y="151" text-anchor="middle" class="side-number">{}</text><text x="730" y="187" text-anchor="middle" class="side-label">Longest Streak</text><text x="730" y="216" text-anchor="middle" class="range">{}</text></g>"##,
+        snapshot.contributions.longest_streak_days,
+        escape_xml(&longest_range)
     );
+
+    let mascot_uri = streak_mascot_data_uri();
     let _ = write!(
         body,
-        r##"<g class="fade" style="animation-delay:240ms"><text x="412.5" y="78" text-anchor="middle" class="num">{}</text><text x="412.5" y="108" text-anchor="middle" class="label">Longest Streak</text><text x="412.5" y="132" text-anchor="middle" class="date">days</text></g>"##,
-        snapshot.contributions.longest_streak_days
+        r##"<image x="242" y="64" width="190" height="291" href="{}" preserveAspectRatio="xMidYMid meet" mask="url(#mascot-mask)" opacity=".96"/>"##,
+        escape_xml(mascot_uri)
+    );
+    body.push_str(
+        r##"<line x1="415" y1="204" x2="501" y2="229" stroke="#d7b391" stroke-width="3.2" stroke-linecap="round" opacity=".92"/><rect x="496" y="221" width="13" height="12" rx="4" fill="#fff3df" stroke="#f3cfa8" stroke-width="1" transform="rotate(16 502.5 227)"/>"##,
+    );
+
+    let state = campfire_state(snapshot, stale);
+    render_campfire(&mut body, state);
+    let current_class = if state == CampfireState::Lit {
+        "current-number current-number-lit"
+    } else {
+        "current-number"
+    };
+    let _ = write!(
+        body,
+        r##"<text x="515" y="128" text-anchor="middle" class="{current_class}">{}</text><text x="515" y="309" text-anchor="middle" class="current-label">Current Streak</text><text x="515" y="336" text-anchor="middle" class="range current-range">{}</text>"##,
+        snapshot.contributions.current_streak_days,
+        escape_xml(&current_range)
     );
 
     if stale {
         body.push_str(
-            r##"<text x="485" y="187" text-anchor="end" class="stale">last known</text>"##,
+            r##"<text x="817" y="352" text-anchor="end" class="stale-note">last known</text>"##,
         );
     }
     body.push_str("</svg>");
     body
+}
+
+fn push_streak_defs(body: &mut String) {
+    body.push_str(
+        r##"<defs>
+<linearGradient id="streak-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#090d18"/><stop offset=".5" stop-color="#101225"/><stop offset="1" stop-color="#090d18"/></linearGradient>
+<radialGradient id="center-ambient"><stop offset="0" stop-color="#432b72" stop-opacity=".42"/><stop offset=".56" stop-color="#2a2254" stop-opacity=".16"/><stop offset="1" stop-color="#0b0f1d" stop-opacity="0"/></radialGradient>
+<linearGradient id="divider-left" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8c91b1" stop-opacity="0"/><stop offset=".22" stop-color="#8c91b1" stop-opacity=".36"/><stop offset=".78" stop-color="#8c91b1" stop-opacity=".36"/><stop offset="1" stop-color="#8c91b1" stop-opacity="0"/></linearGradient>
+<linearGradient id="divider-right" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8c91b1" stop-opacity="0"/><stop offset=".22" stop-color="#8c91b1" stop-opacity=".36"/><stop offset=".78" stop-color="#8c91b1" stop-opacity=".36"/><stop offset="1" stop-color="#8c91b1" stop-opacity="0"/></linearGradient>
+<linearGradient id="flame-outer" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff6b3d"/><stop offset=".52" stop-color="#ff9f43"/><stop offset="1" stop-color="#ffd66b"/></linearGradient>
+<linearGradient id="flame-inner" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#8e5cff"/><stop offset=".54" stop-color="#ff7f50"/><stop offset="1" stop-color="#fff0a7"/></linearGradient>
+<linearGradient id="number-gradient" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#b68cff"/><stop offset=".55" stop-color="#d48cff"/><stop offset="1" stop-color="#ffbd68"/></linearGradient>
+<radialGradient id="mascot-fade" cx="56%" cy="52%" r="70%"><stop offset="0" stop-color="#fff"/><stop offset=".72" stop-color="#fff"/><stop offset="1" stop-color="#000"/></radialGradient>
+<mask id="mascot-mask" maskUnits="userSpaceOnUse" x="230" y="54" width="215" height="310"><rect x="230" y="54" width="215" height="310" fill="url(#mascot-fade)"/></mask>
+<filter id="fire-glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="10"/></filter>
+<filter id="number-glow" x="-30%" y="-70%" width="160%" height="240%"><feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#ff9b55" flood-opacity=".42"/></filter>
+</defs>
+<style>
+.streak-title{font:700 19px 'Segoe UI',Ubuntu,Sans-Serif;fill:#eef0ff;letter-spacing:.2px}
+.side-number{font:700 39px 'Segoe UI',Ubuntu,Sans-Serif;fill:#76a7ff}
+.side-label{font:600 17px 'Segoe UI',Ubuntu,Sans-Serif;fill:#76a7ff}
+.current-number{font:800 48px 'Segoe UI',Ubuntu,Sans-Serif;fill:url(#number-gradient)}
+.current-number-lit{filter:url(#number-glow)}
+.current-label{font:700 18px 'Segoe UI',Ubuntu,Sans-Serif;fill:#c38cff}
+.range{font:500 12px 'Segoe UI',Ubuntu,Sans-Serif;fill:#46d4cc}
+.current-range{font-size:13px}
+.stale-note{font:500 10px 'Segoe UI',Ubuntu,Sans-Serif;fill:#8d94b8}
+.star{fill:#aa92ff;opacity:.62}.spark{stroke:#aa92ff;stroke-width:1.2;stroke-linecap:round;opacity:.7}
+.fade{opacity:0;animation:fade-in .48s ease-out forwards}
+.fire-ignite{transform-box:fill-box;transform-origin:center bottom;animation:ignite .78s cubic-bezier(.18,.78,.25,1) both}
+.flame-outer-motion{transform-box:fill-box;transform-origin:center bottom;animation:flicker-outer 1.7s .78s ease-in-out infinite alternate}
+.flame-inner-motion{transform-box:fill-box;transform-origin:center bottom;animation:flicker-inner 1.25s .78s ease-in-out infinite alternate}
+.fire-glow-motion{animation:glow-pulse 1.9s .6s ease-in-out infinite alternate}
+.ember{opacity:0;animation:ember-rise 2.2s ease-out infinite}.ember-2{animation-delay:.55s}.ember-3{animation-delay:1.15s}.ember-4{animation-delay:1.6s}
+.smoke{fill:none;stroke:#8990a6;stroke-width:3;stroke-linecap:round;opacity:.28}
+@keyframes fade-in{from{opacity:0}to{opacity:1}}
+@keyframes ignite{0%{opacity:.08;transform:translateY(14px) scale(.42,.18)}45%{opacity:1;transform:translateY(-5px) scale(1.12,1.18)}72%{transform:translateY(1px) scale(.96,.94)}100%{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes flicker-outer{0%{transform:translate(-2px,1px) scale(.96,1.02)}50%{transform:translate(2px,-3px) scale(1.05,.94)}100%{transform:translate(-1px,-1px) scale(.99,1.07)}}
+@keyframes flicker-inner{0%{transform:translate(1px,1px) scale(.92,1)}55%{transform:translate(-2px,-2px) scale(1.04,.91)}100%{transform:translate(2px,-4px) scale(.96,1.1)}}
+@keyframes glow-pulse{from{opacity:.34;transform:scale(.94)}to{opacity:.6;transform:scale(1.08)}}
+@keyframes ember-rise{0%{opacity:0;transform:translate(0,0)}18%{opacity:.95}100%{opacity:0;transform:translate(8px,-58px)}}
+</style>"##,
+    );
+}
+
+fn render_campfire(body: &mut String, state: CampfireState) {
+    body.push_str(
+        r##"<g transform="translate(515 238)"><ellipse cx="0" cy="29" rx="58" ry="17" fill="#060810" opacity=".72"/><ellipse cx="-31" cy="23" rx="19" ry="9" fill="#343545"/><ellipse cx="31" cy="23" rx="19" ry="9" fill="#343545"/><ellipse cx="-50" cy="27" rx="16" ry="8" fill="#292b38"/><ellipse cx="50" cy="27" rx="16" ry="8" fill="#292b38"/><rect x="-41" y="14" width="83" height="12" rx="6" fill="#5a352b" transform="rotate(16)"/><rect x="-41" y="14" width="83" height="12" rx="6" fill="#6a3f2e" transform="rotate(-16)"/>"##,
+    );
+    match state {
+        CampfireState::Lit => body.push_str(
+            r##"<g id="campfire-lit"><ellipse class="fire-glow-motion" cx="0" cy="0" rx="54" ry="43" fill="#ff7b4d" opacity=".42" filter="url(#fire-glow)"/><g class="fire-ignite"><g class="flame-outer-motion"><path d="M0 19C-26 12-31-10-18-29C-10-41-8-52-7-65C7-55 16-43 15-29C25-23 31-11 26 2C22 13 12 19 0 19Z" fill="url(#flame-outer)"/></g><g class="flame-inner-motion"><path d="M1 16C-13 10-16-3-9-14C-3-23-2-30 0-39C10-30 15-20 11-11C18-6 18 5 13 11C10 14 6 16 1 16Z" fill="url(#flame-inner)"/></g></g><circle class="ember" cx="-18" cy="-19" r="3" fill="#ffcf66"/><circle class="ember ember-2" cx="14" cy="-14" r="2.5" fill="#ff8b4b"/><circle class="ember ember-3" cx="-4" cy="-24" r="2" fill="#ffd979"/><circle class="ember ember-4" cx="22" cy="-9" r="2" fill="#f7a5ff"/></g>"##,
+        ),
+        CampfireState::Out => body.push_str(
+            r##"<g id="campfire-out"><ellipse cx="0" cy="4" rx="31" ry="12" fill="#424550" opacity=".5"/><path class="smoke" d="M-8 -2C-20-18 4-23-7-41C-12-50-7-56 1-62"/><path class="smoke" d="M10 1C20-14 3-24 14-37C20-44 20-51 14-58"/><circle cx="-6" cy="-1" r="3" fill="#777b86" opacity=".55"/></g>"##,
+        ),
+        CampfireState::Unknown => body.push_str(
+            r##"<g id="campfire-unknown"><ellipse cx="0" cy="2" rx="34" ry="14" fill="#4d4962" opacity=".36"/><path d="M0 12C-12 7-15-4-9-14C-3-23-2-30 0-36C10-28 14-18 10-9C16-4 15 5 10 9C7 11 4 12 0 12Z" fill="#77738c" opacity=".62"/><path class="smoke" d="M-4 -18C-15-31 3-38-4-51"/></g>"##,
+        ),
+    }
+    body.push_str("</g>");
+}
+
+fn streak_mascot_data_uri() -> &'static str {
+    STREAK_MASCOT_DATA_URI
+        .get_or_init(|| {
+            format!(
+                "data:image/png;base64,{}",
+                BASE64_STANDARD.encode(STREAK_MASCOT)
+            )
+        })
+        .as_str()
+}
+
+fn format_date_range(start: Option<&str>, end: Option<&str>, always_year: bool) -> String {
+    let (Some(start), Some(end)) = (start.and_then(parse_iso_date), end.and_then(parse_iso_date))
+    else {
+        return "range unavailable".to_owned();
+    };
+
+    if start == end {
+        return format_date_parts(start, true);
+    }
+
+    let include_year = always_year || start.0 != end.0;
+    if !include_year && start.1 == end.1 {
+        return format!("{} {} – {}", month_name(start.1), start.2, end.2);
+    }
+
+    format!(
+        "{} – {}",
+        format_date_parts(start, include_year),
+        format_date_parts(end, include_year)
+    )
+}
+
+fn parse_iso_date(value: &str) -> Option<(i32, u32, u32)> {
+    let mut parts = value.split('-');
+    let year = parts.next()?.parse().ok()?;
+    let month = parts.next()?.parse().ok()?;
+    let day = parts.next()?.parse().ok()?;
+    if parts.next().is_some() || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    Some((year, month, day))
+}
+
+fn format_date_parts(date: (i32, u32, u32), include_year: bool) -> String {
+    if include_year {
+        format!("{} {}, {}", month_name(date.1), date.2, date.0)
+    } else {
+        format!("{} {}", month_name(date.1), date.2)
+    }
+}
+
+fn month_name(month: u32) -> &'static str {
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    MONTHS[(month.saturating_sub(1).min(11)) as usize]
 }
 
 fn render_unavailable(kind: GitHubCardKind) -> String {
@@ -255,12 +426,15 @@ fn render_unavailable(kind: GitHubCardKind) -> String {
     let mut body = String::with_capacity(1_000);
     push_open(&mut body, width, height, "GitHub stats unavailable");
     push_tokyonight_style(&mut body);
-    if kind != GitHubCardKind::Streak {
-        let _ = write!(
-            body,
-            r##"<rect width="{width}" height="{height}" rx="4.5" fill="{BG}"/>"##
-        );
-    }
+    let _ = write!(
+        body,
+        r##"<rect width="{width}" height="{height}" rx="{}" fill="{BG}"/>"##,
+        if kind == GitHubCardKind::Streak {
+            24
+        } else {
+            5
+        }
+    );
     body.push_str(r##"<text x="25" y="42" class="header">GitHub stats</text><text x="25" y="76" class="stat">Stats are temporarily unavailable.</text>"##);
     body.push_str("</svg>");
     body
@@ -359,6 +533,47 @@ mod tests {
         }
     }
 
+    #[test]
+    fn active_day_renders_animated_lit_campfire_and_embedded_mascot() {
+        let card = render_card(
+            GitHubCardKind::Streak,
+            Some(&snapshot()),
+            100,
+            Duration::from_secs(60),
+        );
+        assert!(card.body().contains("id=\"campfire-lit\""));
+        assert!(card.body().contains("@keyframes ignite"));
+        assert!(card.body().contains("data:image/png;base64,"));
+        assert!(card.body().contains(">Sep 8 – 14</text>"));
+    }
+
+    #[test]
+    fn empty_current_day_extinguishes_campfire_without_erasing_streak() {
+        let mut snapshot = snapshot();
+        snapshot.contributions.today_contributions = Some(0);
+        let card = render_card(
+            GitHubCardKind::Streak,
+            Some(&snapshot),
+            100,
+            Duration::from_secs(60),
+        );
+        assert!(card.body().contains("id=\"campfire-out\""));
+        assert!(!card.body().contains("id=\"campfire-lit\""));
+        assert!(card.body().contains(">7</text>"));
+    }
+
+    #[test]
+    fn stale_snapshot_uses_neutral_campfire_state() {
+        let card = render_card(
+            GitHubCardKind::Streak,
+            Some(&snapshot()),
+            61_000,
+            Duration::from_secs(60),
+        );
+        assert!(card.body().contains("id=\"campfire-unknown\""));
+        assert!(card.body().contains("last known"));
+    }
+
     fn snapshot() -> GitHubSnapshot {
         GitHubSnapshot {
             revision: 3,
@@ -374,6 +589,13 @@ mod tests {
                 active_days: 80,
                 current_streak_days: 7,
                 longest_streak_days: 21,
+                calendar_start: Some("2025-09-15".to_owned()),
+                calendar_end: Some("2026-09-14".to_owned()),
+                today_contributions: Some(2),
+                current_streak_start: Some("2026-09-08".to_owned()),
+                current_streak_end: Some("2026-09-14".to_owned()),
+                longest_streak_start: Some("2026-08-01".to_owned()),
+                longest_streak_end: Some("2026-08-21".to_owned()),
                 restricted_contributions: 10,
                 includes_restricted_contributions: true,
             },

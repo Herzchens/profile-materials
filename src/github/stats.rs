@@ -48,6 +48,20 @@ pub struct ContributionSummary {
     pub active_days: u64,
     pub current_streak_days: u64,
     pub longest_streak_days: u64,
+    #[serde(default)]
+    pub calendar_start: Option<String>,
+    #[serde(default)]
+    pub calendar_end: Option<String>,
+    #[serde(default)]
+    pub today_contributions: Option<u64>,
+    #[serde(default)]
+    pub current_streak_start: Option<String>,
+    #[serde(default)]
+    pub current_streak_end: Option<String>,
+    #[serde(default)]
+    pub longest_streak_start: Option<String>,
+    #[serde(default)]
+    pub longest_streak_end: Option<String>,
     pub restricted_contributions: u64,
     pub includes_restricted_contributions: bool,
 }
@@ -279,37 +293,33 @@ pub fn is_stale(snapshot: &GitHubSnapshot, now_unix_ms: u64, stale_after: Durati
         >= stale_after.as_millis().min(u128::from(u64::MAX)) as u64
 }
 
+#[derive(Clone)]
+struct ParsedContributionDay {
+    ordinal: i64,
+    count: u64,
+    date: String,
+}
+
 fn build_contribution_summary(
     days: &[RawContributionDay],
     raw: &RawContributions,
 ) -> ContributionSummary {
     let mut parsed_days = days
         .iter()
-        .filter_map(|day| day_number(&day.date).map(|ordinal| (ordinal, day.contribution_count)))
+        .filter_map(|day| {
+            day_number(&day.date).map(|ordinal| ParsedContributionDay {
+                ordinal,
+                count: day.contribution_count,
+                date: day.date.clone(),
+            })
+        })
         .collect::<Vec<_>>();
-    parsed_days.sort_unstable_by_key(|(ordinal, _)| *ordinal);
-    parsed_days.dedup_by_key(|(ordinal, _)| *ordinal);
+    parsed_days.sort_unstable_by_key(|day| day.ordinal);
+    parsed_days.dedup_by_key(|day| day.ordinal);
 
-    let active_days = parsed_days.iter().filter(|(_, count)| *count > 0).count() as u64;
-
-    let mut longest = 0_u64;
-    let mut running = 0_u64;
-    let mut previous_active_ordinal = None;
-    for (ordinal, count) in &parsed_days {
-        if *count == 0 {
-            running = 0;
-            previous_active_ordinal = None;
-            continue;
-        }
-
-        running = if previous_active_ordinal.is_some_and(|previous| *ordinal == previous + 1) {
-            running + 1
-        } else {
-            1
-        };
-        longest = longest.max(running);
-        previous_active_ordinal = Some(*ordinal);
-    }
+    let active_days = parsed_days.iter().filter(|day| day.count > 0).count() as u64;
+    let current = current_streak_details(&parsed_days);
+    let longest = longest_streak_details(&parsed_days);
 
     ContributionSummary {
         total: raw.calendar.total_contributions,
@@ -318,37 +328,100 @@ fn build_contribution_summary(
         pull_requests: raw.total_pull_request_contributions,
         reviews: raw.total_pull_request_review_contributions,
         active_days,
-        current_streak_days: current_streak(&parsed_days),
-        longest_streak_days: longest,
+        current_streak_days: current.days,
+        longest_streak_days: longest.days,
+        calendar_start: parsed_days.first().map(|day| day.date.clone()),
+        calendar_end: parsed_days.last().map(|day| day.date.clone()),
+        today_contributions: parsed_days.last().map(|day| day.count),
+        current_streak_start: current.start,
+        current_streak_end: current.end,
+        longest_streak_start: longest.start,
+        longest_streak_end: longest.end,
         restricted_contributions: raw.restricted_contributions_count,
         includes_restricted_contributions: raw.has_any_restricted_contributions,
     }
 }
 
-fn current_streak(days: &[(i64, u64)]) -> u64 {
-    let Some((latest_ordinal, latest_count)) = days.last().copied() else {
-        return 0;
+#[derive(Default)]
+struct StreakDetails {
+    days: u64,
+    start: Option<String>,
+    end: Option<String>,
+}
+
+fn current_streak_details(days: &[ParsedContributionDay]) -> StreakDetails {
+    let Some(latest) = days.last() else {
+        return StreakDetails::default();
     };
 
-    let mut expected = if latest_count == 0 {
-        latest_ordinal - 1
+    let mut expected = if latest.count == 0 {
+        latest.ordinal - 1
     } else {
-        latest_ordinal
+        latest.ordinal
     };
-    let mut streak = 0_u64;
+    let mut details = StreakDetails::default();
 
-    for (ordinal, count) in days.iter().rev() {
-        if *ordinal > expected {
+    for day in days.iter().rev() {
+        if day.ordinal > expected {
             continue;
         }
-        if *ordinal != expected || *count == 0 {
+        if day.ordinal != expected || day.count == 0 {
             break;
         }
-        streak += 1;
+        if details.end.is_none() {
+            details.end = Some(day.date.clone());
+        }
+        details.start = Some(day.date.clone());
+        details.days = details.days.saturating_add(1);
         expected -= 1;
     }
 
-    streak
+    details
+}
+
+fn longest_streak_details(days: &[ParsedContributionDay]) -> StreakDetails {
+    let mut best = StreakDetails::default();
+    let mut running_days = 0_u64;
+    let mut running_start: Option<String> = None;
+    let mut previous_active_ordinal = None;
+
+    for day in days {
+        if day.count == 0 {
+            running_days = 0;
+            running_start = None;
+            previous_active_ordinal = None;
+            continue;
+        }
+
+        if previous_active_ordinal.is_some_and(|previous| day.ordinal == previous + 1) {
+            running_days = running_days.saturating_add(1);
+        } else {
+            running_days = 1;
+            running_start = Some(day.date.clone());
+        }
+
+        if running_days > best.days {
+            best.days = running_days;
+            best.start = running_start.clone();
+            best.end = Some(day.date.clone());
+        }
+        previous_active_ordinal = Some(day.ordinal);
+    }
+
+    best
+}
+
+#[cfg(test)]
+fn current_streak(days: &[(i64, u64)]) -> u64 {
+    let parsed_days = days
+        .iter()
+        .map(|(ordinal, count)| ParsedContributionDay {
+            ordinal: *ordinal,
+            count: *count,
+            date: ordinal.to_string(),
+        })
+        .collect::<Vec<_>>();
+    current_streak_details(&parsed_days).days
 }
 
 fn build_overall_stats(
@@ -731,7 +804,7 @@ mod tests {
     }
 
     #[test]
-    fn contribution_summary_tracks_longest_and_current_streaks() {
+    fn contribution_summary_tracks_ranges_and_today_state() {
         let days = [
             RawContributionDay {
                 contribution_count: 1,
@@ -776,6 +849,48 @@ mod tests {
         assert_eq!(summary.active_days, 5);
         assert_eq!(summary.current_streak_days, 3);
         assert_eq!(summary.longest_streak_days, 3);
+        assert_eq!(summary.today_contributions, Some(1));
+        assert_eq!(summary.calendar_start.as_deref(), Some("2026-09-01"));
+        assert_eq!(summary.calendar_end.as_deref(), Some("2026-09-06"));
+        assert_eq!(summary.current_streak_start.as_deref(), Some("2026-09-04"));
+        assert_eq!(summary.current_streak_end.as_deref(), Some("2026-09-06"));
+        assert_eq!(summary.longest_streak_start.as_deref(), Some("2026-09-04"));
+        assert_eq!(summary.longest_streak_end.as_deref(), Some("2026-09-06"));
+    }
+
+    #[test]
+    fn contribution_summary_marks_empty_latest_day_without_breaking_current_streak() {
+        let days = [
+            RawContributionDay {
+                contribution_count: 1,
+                date: "2026-09-10".to_owned(),
+            },
+            RawContributionDay {
+                contribution_count: 2,
+                date: "2026-09-11".to_owned(),
+            },
+            RawContributionDay {
+                contribution_count: 0,
+                date: "2026-09-12".to_owned(),
+            },
+        ];
+        let raw = RawContributions {
+            calendar: RawContributionCalendar {
+                total_contributions: 3,
+                weeks: Vec::new(),
+            },
+            total_commit_contributions: 3,
+            total_issue_contributions: 0,
+            total_pull_request_contributions: 0,
+            total_pull_request_review_contributions: 0,
+            restricted_contributions_count: 0,
+            has_any_restricted_contributions: false,
+        };
+        let summary = build_contribution_summary(&days, &raw);
+        assert_eq!(summary.current_streak_days, 2);
+        assert_eq!(summary.today_contributions, Some(0));
+        assert_eq!(summary.current_streak_start.as_deref(), Some("2026-09-10"));
+        assert_eq!(summary.current_streak_end.as_deref(), Some("2026-09-11"));
     }
 
     #[test]
