@@ -4,7 +4,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 use super::stats::{GitHubSnapshot, is_stale};
 
-const SVG_REVISION: u8 = 9;
+const SVG_REVISION: u8 = 10;
 const TITLE: &str = "#70A5FD";
 const ICON: &str = "#BF91F3";
 const TEXT: &str = "#38BDAE";
@@ -260,7 +260,7 @@ fn render_streak(snapshot: &GitHubSnapshot, stale: bool) -> String {
     let _ = write!(
         body,
         r##"<g class="fade"><text x="105" y="151" text-anchor="middle" class="side-number">{}</text><text x="105" y="187" text-anchor="middle" class="side-label">Total Contributions</text><text x="105" y="216" text-anchor="middle" class="range">{}</text></g>"##,
-        format_count(snapshot.contributions.total),
+        snapshot.contributions.total,
         escape_xml(&total_range)
     );
     let _ = write!(
@@ -572,6 +572,8 @@ mod tests {
         );
         assert!(!card.body().contains("mascot-mask"));
         assert!(card.body().contains(">Sep 8 – 14</text>"));
+        assert!(card.body().contains(">4376</text>"));
+        assert!(!card.body().contains(">4.4k</text>"));
     }
 
     #[test]
@@ -622,7 +624,7 @@ mod tests {
             login: "Herzchens".to_owned(),
             url: "https://github.com/Herzchens".to_owned(),
             contributions: ContributionSummary {
-                total: 321,
+                total: 4_376,
                 commits: 200,
                 issues: 10,
                 pull_requests: 20,
