@@ -8,8 +8,8 @@ use twilight_model::id::{
 };
 
 use crate::state::{
-    ActivityAssetsSnapshot, ActivityKind, ActivitySnapshot, ActivityTimestampsSnapshot,
-    ClientStatusSnapshot, PresenceData, PresenceStatus,
+    ActivityAssetsSnapshot, ActivityKind, ActivityPartySnapshot, ActivitySnapshot,
+    ActivityTimestampsSnapshot, ClientStatusSnapshot, PresenceData, PresenceStatus,
 };
 
 pub fn is_target(
@@ -55,6 +55,12 @@ fn normalize_activity(activity: &Activity) -> ActivitySnapshot {
             ActivityType::Unknown(value) => ActivityKind::Unknown(value),
             _ => ActivityKind::Unknown(u8::MAX),
         },
+        party: activity.party.as_ref().and_then(|party| party.size).map(
+            |[current_size, max_size]| ActivityPartySnapshot {
+                current_size,
+                max_size,
+            },
+        ),
         name: activity.name.clone(),
         state: activity.state.clone(),
         timestamps: activity

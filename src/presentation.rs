@@ -1,11 +1,11 @@
 use serde::Serialize;
 
 use crate::{
-    activity::{SpotifyActivity, resolve_artwork, spotify_activity},
+    activity::{SpotifyActivity, activity_preference_key, resolve_artwork, spotify_activity},
     state::{
-        ActivityAssetsSnapshot, ActivityKind, ActivitySnapshot, ActivityTimestampsSnapshot,
-        ClientStatusSnapshot, GatewayStatus, PresenceFreshness, PresenceState, PresenceStatus,
-        RuntimeState,
+        ActivityAssetsSnapshot, ActivityKind, ActivityPartySnapshot, ActivitySnapshot,
+        ActivityTimestampsSnapshot, ClientStatusSnapshot, GatewayStatus, PresenceFreshness,
+        PresenceState, PresenceStatus, RuntimeState,
     },
 };
 
@@ -35,9 +35,16 @@ struct PublicActivity {
     application_id: Option<String>,
     details: Option<String>,
     state: Option<String>,
+    party: Option<PublicActivityParty>,
     timestamps: Option<PublicActivityTimestamps>,
     assets: Option<PublicActivityAssets>,
     artwork: PublicArtwork,
+}
+
+#[derive(Debug, Serialize)]
+struct PublicActivityParty {
+    current_size: u64,
+    max_size: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -150,7 +157,7 @@ fn public_activities(activities: &[ActivitySnapshot]) -> Vec<PublicActivity> {
             .iter()
             .position(|candidate| same_display_activity(candidate, activity))
         {
-            if activity_richness(activity) > activity_richness(selected[index]) {
+            if activity_preference_key(activity) > activity_preference_key(selected[index]) {
                 selected[index] = activity;
             }
         } else {
@@ -162,33 +169,7 @@ fn public_activities(activities: &[ActivitySnapshot]) -> Vec<PublicActivity> {
 }
 
 fn same_display_activity(left: &ActivitySnapshot, right: &ActivitySnapshot) -> bool {
-    left.name.trim().to_lowercase() == right.name.trim().to_lowercase()
-}
-
-fn activity_richness(activity: &ActivitySnapshot) -> (u8, u8, u8, u8) {
-    let descriptive_fields = u8::from(non_empty(activity.details.as_deref()))
-        + u8::from(non_empty(activity.state.as_deref()));
-    let asset_fields = activity.assets.as_ref().map_or(0, |assets| {
-        u8::from(non_empty(assets.large_image.as_deref()))
-            + u8::from(non_empty(assets.large_text.as_deref()))
-            + u8::from(non_empty(assets.small_image.as_deref()))
-            + u8::from(non_empty(assets.small_text.as_deref()))
-    });
-    let timestamp_fields = activity.timestamps.as_ref().map_or(0, |timestamps| {
-        u8::from(timestamps.start.is_some()) + u8::from(timestamps.end.is_some())
-    });
-    let application_id = u8::from(non_empty(activity.application_id.as_deref()));
-
-    (
-        descriptive_fields,
-        asset_fields,
-        timestamp_fields,
-        application_id,
-    )
-}
-
-fn non_empty(value: Option<&str>) -> bool {
-    value.is_some_and(|value| !value.trim().is_empty())
+    left.name.trim().eq_ignore_ascii_case(right.name.trim())
 }
 
 fn public_activity(activity: &ActivitySnapshot) -> PublicActivity {
@@ -200,6 +181,7 @@ fn public_activity(activity: &ActivitySnapshot) -> PublicActivity {
         application_id: activity.application_id.clone(),
         details: activity.details.clone(),
         state: activity.state.clone(),
+        party: activity.party.as_ref().map(public_party),
         timestamps: activity.timestamps.as_ref().map(public_timestamps),
         assets: activity.assets.as_ref().map(public_assets),
         artwork: PublicArtwork {
@@ -207,6 +189,13 @@ fn public_activity(activity: &ActivitySnapshot) -> PublicActivity {
             url: artwork.url,
             fallback_key: artwork.fallback_key,
         },
+    }
+}
+
+fn public_party(party: &ActivityPartySnapshot) -> PublicActivityParty {
+    PublicActivityParty {
+        current_size: party.current_size,
+        max_size: party.max_size,
     }
 }
 
@@ -265,9 +254,9 @@ mod tests {
     use serde_json::Value;
 
     use crate::state::{
-        ActivityAssetsSnapshot, ActivityKind, ActivitySnapshot, ActivityTimestampsSnapshot,
-        ClientStatusSnapshot, GatewayStatus, PresenceData, PresenceFreshness, PresenceSnapshot,
-        PresenceState, PresenceStatus, RuntimeState,
+        ActivityAssetsSnapshot, ActivityKind, ActivityPartySnapshot, ActivitySnapshot,
+        ActivityTimestampsSnapshot, ClientStatusSnapshot, GatewayStatus, PresenceData,
+        PresenceFreshness, PresenceSnapshot, PresenceState, PresenceStatus, RuntimeState,
     };
 
     use super::build_public_presence;
@@ -349,6 +338,10 @@ mod tests {
                         details: Some("Editing".to_owned()),
                         kind: ActivityKind::Playing,
                         name: "Visual Studio Code".to_owned(),
+                        party: Some(ActivityPartySnapshot {
+                            current_size: 2,
+                            max_size: 5,
+                        }),
                         state: Some("main.rs".to_owned()),
                         timestamps: None,
                     }],
@@ -369,6 +362,8 @@ mod tests {
         assert_eq!(value["availability"], "known");
         assert_eq!(value["status"], "online");
         assert_eq!(value["activities"][0]["application_id"], "333");
+        assert_eq!(value["activities"][0]["party"]["current_size"], 2);
+        assert_eq!(value["activities"][0]["party"]["max_size"], 5);
         assert_eq!(
             value["activities"][0]["artwork"]["url"],
             "https://cdn.discordapp.com/app-assets/333/444.png"
@@ -383,7 +378,7 @@ mod tests {
     }
 
     #[test]
-    fn keeps_distinct_activities_selects_richest_duplicate_and_projects_spotify() {
+    fn keeps_distinct_activities_selects_newest_duplicate_and_projects_spotify() {
         let state = runtime(
             PresenceState::Known(PresenceSnapshot {
                 data: PresenceData {
@@ -391,9 +386,10 @@ mod tests {
                         ActivitySnapshot {
                             application_id: Some("123".to_owned()),
                             assets: None,
-                            details: None,
+                            details: Some("Old match".to_owned()),
                             kind: ActivityKind::Playing,
                             name: "VALORANT".to_owned(),
+                            party: None,
                             state: None,
                             timestamps: Some(ActivityTimestampsSnapshot {
                                 start: Some(10),
@@ -406,6 +402,7 @@ mod tests {
                             details: Some("Editing gateway.rs".to_owned()),
                             kind: ActivityKind::Playing,
                             name: "RustRover".to_owned(),
+                            party: None,
                             state: Some("profile-materials".to_owned()),
                             timestamps: None,
                         },
@@ -420,6 +417,7 @@ mod tests {
                             details: Some("Competitive (Split) 0 - 0".to_owned()),
                             kind: ActivityKind::Playing,
                             name: "valorant".to_owned(),
+                            party: None,
                             state: None,
                             timestamps: Some(ActivityTimestampsSnapshot {
                                 start: Some(20),
@@ -429,18 +427,37 @@ mod tests {
                         ActivitySnapshot {
                             application_id: None,
                             assets: Some(ActivityAssetsSnapshot {
-                                large_image: Some("spotify:abc123".to_owned()),
-                                large_text: Some("Album".to_owned()),
+                                large_image: Some("spotify:old".to_owned()),
+                                large_text: Some("Old album".to_owned()),
                                 small_image: None,
                                 small_text: None,
                             }),
-                            details: Some("Track title".to_owned()),
+                            details: Some("Old track".to_owned()),
                             kind: ActivityKind::Listening,
                             name: "Spotify".to_owned(),
-                            state: Some("Artist".to_owned()),
+                            party: None,
+                            state: Some("Old artist".to_owned()),
                             timestamps: Some(ActivityTimestampsSnapshot {
                                 start: Some(1000),
                                 end: Some(181000),
+                            }),
+                        },
+                        ActivitySnapshot {
+                            application_id: None,
+                            assets: Some(ActivityAssetsSnapshot {
+                                large_image: Some("spotify:new".to_owned()),
+                                large_text: Some("New album".to_owned()),
+                                small_image: None,
+                                small_text: None,
+                            }),
+                            details: Some("New track".to_owned()),
+                            kind: ActivityKind::Listening,
+                            name: "spotify".to_owned(),
+                            party: None,
+                            state: Some("New artist".to_owned()),
+                            timestamps: Some(ActivityTimestampsSnapshot {
+                                start: Some(200000),
+                                end: Some(380000),
                             }),
                         },
                     ],
@@ -465,15 +482,13 @@ mod tests {
         assert_eq!(activities[0]["application_id"], "456");
         assert_eq!(activities[0]["details"], "Competitive (Split) 0 - 0");
         assert_eq!(activities[1]["name"], "RustRover");
-        assert_eq!(activities[2]["name"], "Spotify");
-        assert_eq!(value["spotify"]["title"], "Track title");
-        assert_eq!(value["spotify"]["artist"], "Artist");
-        assert_eq!(value["spotify"]["album"], "Album");
+        assert_eq!(activities[2]["name"], "spotify");
+        assert_eq!(activities[2]["details"], "New track");
+        assert_eq!(value["spotify"]["title"], "New track");
+        assert_eq!(value["spotify"]["artist"], "New artist");
+        assert_eq!(value["spotify"]["album"], "New album");
         assert_eq!(value["spotify"]["duration_ms"], 180000);
-        assert_eq!(
-            value["spotify"]["cover_url"],
-            "https://i.scdn.co/image/abc123"
-        );
+        assert_eq!(value["spotify"]["cover_url"], "https://i.scdn.co/image/new");
     }
 
     fn contains_key_recursive(value: &Value, key: &str) -> bool {

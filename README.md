@@ -2,7 +2,11 @@
 
 Source for the ItzHerzchen profile service and profile assets.
 
-The service reads Discord presence through an official bot, keeps the last known presence across restarts, streams changes over SSE, and exposes health endpoints for deployment. Discord activity artwork is resolved into usable image URLs with deterministic fallbacks. Linked Spotify activity is read directly from Discord, so no separate Spotify account, OAuth flow, token, or polling service is required.
+## Temporary GitHub compatibility preview
+
+[![Live presence card](https://profile.tailed8451.ts.net/v1/svg/presence.svg?compat=activity-cards)](https://profile.tailed8451.ts.net/presence)
+
+The service reads Discord presence through an official bot, keeps the last known presence across restarts, streams changes over SSE, and exposes health endpoints for deployment. Discord activity artwork is resolved into usable image URLs with deterministic fallbacks. Spotify playback is collected independently through the Spotify Web API when configured; Discord Spotify RPC is excluded from the presentation layer so Spotify visibility does not depend on Discord presence propagation.
 
 It also collects GitHub profile statistics and serves SVG cards for GitHub stats, top languages, contribution streaks, Discord presence, Spotify activity, and the production profile hero. The GitHub cards follow the visual language and statistics semantics of the profile's existing GitHub Readme Stats setup while using this service's own refresh, revision, and last-known-good state.
 
@@ -35,6 +39,12 @@ GITHUB_FEATURED_REPOS=repo-a,repo-b      # optional; ordered, up to 3 shown
 GITHUB_STATE_PATH=state/github.json      # optional; default shown
 GITHUB_POLL_SECS=15                      # optional; minimum 15
 GITHUB_STALE_AFTER_SECS=21600            # optional; default shown
+
+SPOTIFY_CLIENT_ID=<client id>            # optional as a complete Spotify group
+SPOTIFY_CLIENT_SECRET=<client secret>    # required when Spotify is enabled
+SPOTIFY_REFRESH_TOKEN=<refresh token>    # required when Spotify is enabled
+SPOTIFY_REFRESH_TOKEN_PATH=state/spotify-refresh-token # optional; default shown
+SPOTIFY_POLL_SECS=5                      # optional; minimum/default 5
 
 RUST_LOG=info                            # optional
 ```
@@ -70,7 +80,7 @@ GET /health/live
 GET /health/ready
 ```
 
-`/v1/public/presence` returns the current allow-listed presence state. Activities include a resolved artwork URL when Discord provides a usable asset plus a stable fallback key for the renderer. When a linked Spotify listening activity is present, the response also includes a compact `spotify` object with title, artist, album, cover URL, and track timing information.
+`/v1/public/presence` returns the current allow-listed presence state. Activities include a resolved artwork URL when Discord provides a usable asset plus a stable fallback key for the renderer. When native Spotify playback is active, the response also includes a compact `spotify` object with title, artist, album, cover URL, and track timing information. Listening activities that provide both start and end timestamps render a live progress bar; long media metadata is fitted to the card instead of being ellipsized.
 
 `/v1/live` streams the same public presence representation over server-sent events. `/debug/live` is a minimal browser view of that stream.
 

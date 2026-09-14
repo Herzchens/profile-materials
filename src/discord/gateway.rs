@@ -3,6 +3,7 @@ use std::{error::Error, fmt, path::PathBuf, sync::Arc, time::Instant};
 use twilight_gateway::{
     Event, EventTypeFlags, Intents, Shard, ShardId, ShardState, StreamExt as _,
 };
+use twilight_model::gateway::payload::incoming::{GuildCreate, PresenceUpdate};
 
 use crate::{
     clock::{self, ClockError},
@@ -50,43 +51,62 @@ pub async fn run(
             Ok(event) => {
                 store.mark_gateway_live()?;
 
-                if let Event::PresenceUpdate(presence) = event {
-                    let received_at = Instant::now();
+                let received_at = Instant::now();
+                let target_presence = match event {
+                    Event::PresenceUpdate(presence) => Some((presence, "presence_update")),
+                    Event::GuildCreate(guild_create) => match *guild_create {
+                        GuildCreate::Available(guild) if guild.id == config.target_guild_id => {
+                            guild
+                                .presences
+                                .into_iter()
+                                .find(|presence| presence.user.id() == config.target_user_id)
+                                .map(|presence| {
+                                    (Box::new(PresenceUpdate(presence)), "guild_create_bootstrap")
+                                })
+                        }
+                        GuildCreate::Available(_) | GuildCreate::Unavailable(_) => None,
+                    },
+                    _ => None,
+                };
 
-                    if !is_target(&presence, config.target_user_id, config.target_guild_id) {
-                        continue;
-                    }
+                let Some((presence, source)) = target_presence else {
+                    continue;
+                };
 
-                    let data = normalize_presence(&presence);
-                    let observed_at_unix_ms = clock::unix_time_millis()?;
-                    let activity_count = data.activities.len();
-                    let status = data.status;
+                if !is_target(&presence, config.target_user_id, config.target_guild_id) {
+                    continue;
+                }
 
-                    match store.publish(data, observed_at_unix_ms)? {
-                        PublishOutcome::Changed { revision } => tracing::info!(
-                            revision,
-                            status = ?status,
-                            activity_count,
-                            processing_latency_us = received_at.elapsed().as_micros(),
-                            "target presence published"
-                        ),
-                        PublishOutcome::Unchanged { revision } => tracing::debug!(
-                            revision,
-                            processing_latency_us = received_at.elapsed().as_micros(),
-                            "duplicate target presence refreshed"
-                        ),
-                    }
+                let data = normalize_presence(&presence);
+                let observed_at_unix_ms = clock::unix_time_millis()?;
+                let activity_count = data.activities.len();
+                let status = data.status;
 
-                    if let Some((snapshot, validated_at_unix_ms)) = store.persistence_snapshot()
-                        && let Err(error) =
-                            lkg::save(&lkg_path, &snapshot, validated_at_unix_ms).await
-                    {
-                        tracing::error!(
-                            path = %lkg_path.display(),
-                            error = %error,
-                            "failed to persist presence LKG"
-                        );
-                    }
+                match store.publish(data, observed_at_unix_ms)? {
+                    PublishOutcome::Changed { revision } => tracing::info!(
+                        revision,
+                        status = ?status,
+                        activity_count,
+                        source,
+                        processing_latency_us = received_at.elapsed().as_micros(),
+                        "target presence published"
+                    ),
+                    PublishOutcome::Unchanged { revision } => tracing::debug!(
+                        revision,
+                        source,
+                        processing_latency_us = received_at.elapsed().as_micros(),
+                        "duplicate target presence refreshed"
+                    ),
+                }
+
+                if let Some((snapshot, validated_at_unix_ms)) = store.persistence_snapshot()
+                    && let Err(error) = lkg::save(&lkg_path, &snapshot, validated_at_unix_ms).await
+                {
+                    tracing::error!(
+                        path = %lkg_path.display(),
+                        error = %error,
+                        "failed to persist presence LKG"
+                    );
                 }
             }
             Err(_) => {
