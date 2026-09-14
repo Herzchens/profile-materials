@@ -15,7 +15,7 @@ use crate::{
 };
 
 const CARD_WIDTH: u32 = 1774;
-const RENDERER_REVISION: u8 = 11;
+const RENDERER_REVISION: u8 = 13;
 const TIME_BUCKET_MS: u64 = 15_000;
 const MAX_VISIBLE_ACTIVITIES: usize = 4;
 const META_ROW_GAP: u32 = 31;
@@ -146,6 +146,7 @@ fn render_presence_card(
 <linearGradient id="fallback-art" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#262044"/><stop offset="1" stop-color="#111729"/></linearGradient>
 <filter id="shadow" x="-20%" y="-30%" width="140%" height="160%"><feDropShadow dx="0" dy="7" stdDeviation="14" flood-color="#03050b" flood-opacity=".38"/></filter>
 <filter id="art-blur" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="26"/></filter>
+<filter id="art-blur-single" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="18"/></filter>
 <clipPath id="avatar-clip"><circle cx="153" cy="134" r="63"/></clipPath>
 </defs>"##
     ));
@@ -417,6 +418,8 @@ fn render_activity_panel(
     let artwork = resolve_activity_artwork(activity);
     let spotify = is_spotify_activity(activity);
     let listening = activity.kind == ActivityKind::Listening;
+    let activity_focus = !listening;
+    let wide_focus = panel.width > 1000 && activity_focus;
     let art_size = if listening {
         if panel.width > 1000 { 188 } else { 150 }
     } else if panel.width > 1000 {
@@ -435,9 +438,15 @@ fn render_activity_panel(
     let art_clip = format!("art-clip-{index}");
     let panel_tint = format!("panel-tint-{index}");
     let accent = activity_accent(activity);
+    let (tint_mid_opacity, tint_end_opacity, backdrop_filter, backdrop_opacity) = if activity_focus
+    {
+        (".64", ".72", "art-blur-single", ".74")
+    } else {
+        (".70", ".82", "art-blur", ".66")
+    };
 
     body.push_str(&format!(
-        r##"<g id="activity-panel-{index}"><defs><clipPath id="{panel_clip}"><rect x="{}" y="{}" width="{}" height="{}" rx="21"/></clipPath><clipPath id="{art_clip}"><rect x="{art_x}" y="{art_y}" width="{art_size}" height="{art_size}" rx="17"/></clipPath><linearGradient id="{panel_tint}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="{accent}" stop-opacity=".13"/><stop offset=".43" stop-color="#0b101a" stop-opacity=".70"/><stop offset="1" stop-color="#090e18" stop-opacity=".82"/></linearGradient></defs>"##,
+        r##"<g id="activity-panel-{index}"><defs><clipPath id="{panel_clip}"><rect x="{}" y="{}" width="{}" height="{}" rx="21"/></clipPath><clipPath id="{art_clip}"><rect x="{art_x}" y="{art_y}" width="{art_size}" height="{art_size}" rx="17"/></clipPath><linearGradient id="{panel_tint}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="{accent}" stop-opacity=".13"/><stop offset=".43" stop-color="#0b101a" stop-opacity="{tint_mid_opacity}"/><stop offset="1" stop-color="#090e18" stop-opacity="{tint_end_opacity}"/></linearGradient></defs>"##,
         panel.x, panel.y, panel.width, panel.height
     ));
 
@@ -448,7 +457,7 @@ fn render_activity_panel(
         .and_then(|url| embedded.href(url))
     {
         body.push_str(&format!(
-            r##"<image x="{}" y="{}" width="{}" height="{}" href="{}" preserveAspectRatio="xMidYMid slice" filter="url(#art-blur)" opacity=".66" clip-path="url(#{panel_clip})"/>"##,
+            r##"<image x="{}" y="{}" width="{}" height="{}" href="{}" preserveAspectRatio="xMidYMid slice" filter="url(#{backdrop_filter})" opacity="{backdrop_opacity}" clip-path="url(#{panel_clip})"/>"##,
             panel.x,
             panel.y,
             panel.width,
@@ -478,7 +487,13 @@ fn render_activity_panel(
         return;
     }
 
-    let mut content_y = panel.y + 111;
+    let mut content_y = if wide_focus {
+        panel.y + 150
+    } else if activity_focus {
+        panel.y + 126
+    } else {
+        panel.y + 111
+    };
     let content_width = panel
         .x
         .saturating_add(panel.width)
@@ -614,9 +629,42 @@ fn render_spotify_content(
 
 fn render_app_title(body: &mut String, activity: &ActivitySnapshot, x: u32, y: u32, panel: Panel) {
     let (verb, verb_color, name_color) = activity_title_style(activity);
-    let font_size = if panel.width > 1000 { 31 } else { 28 };
-    let max_chars = if panel.width > 1000 { 38 } else { 23 };
+    let max_chars = if panel.width > 1000 { 38 } else { 28 };
     let name = truncate_chars(activity.name.trim(), max_chars);
+
+    if activity.kind != ActivityKind::Listening {
+        let compact = panel.width <= 1000;
+        text(
+            body,
+            x,
+            y + if compact { 15 } else { 17 },
+            if compact { 16 } else { 18 },
+            verb_color,
+            "700",
+            verb,
+            None,
+        );
+        let max_width = panel
+            .x
+            .saturating_add(panel.width)
+            .saturating_sub(26)
+            .saturating_sub(x)
+            .max(1);
+        fitted_text(
+            body,
+            x,
+            y + if compact { 55 } else { 66 },
+            if compact { 34 } else { 42 },
+            name_color,
+            "800",
+            &name,
+            max_width,
+            None,
+        );
+        return;
+    }
+
+    let font_size = if panel.width > 1000 { 31 } else { 28 };
     body.push_str(&format!(
         r##"<text x="{x}" y="{}" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="{font_size}" font-weight="800"><tspan fill="{verb_color}">{}</tspan><tspan fill="{name_color}"> {}</tspan></text>"##,
         y + 29,
@@ -633,12 +681,12 @@ fn activity_title_style(activity: &ActivitySnapshot) -> (&'static str, &'static 
             listening_service_color(&activity.name),
         ),
         ActivityKind::Playing | ActivityKind::Competing => {
-            ("Playing", activity_accent(activity), "#f8f8ff")
+            ("Playing", "#f8f8ff", activity_accent(activity))
         }
-        ActivityKind::Streaming => ("Streaming", activity_accent(activity), "#f8f8ff"),
-        ActivityKind::Watching => ("Watching", activity_accent(activity), "#f8f8ff"),
+        ActivityKind::Streaming => ("Streaming", "#f8f8ff", activity_accent(activity)),
+        ActivityKind::Watching => ("Watching", "#f8f8ff", activity_accent(activity)),
         ActivityKind::Custom | ActivityKind::Unknown(_) => {
-            ("Using", activity_accent(activity), "#f8f8ff")
+            ("Using", "#f8f8ff", activity_accent(activity))
         }
     }
 }
@@ -672,9 +720,11 @@ fn render_standard_metadata(
         return;
     }
 
+    let prominent = activity.kind != ActivityKind::Listening;
+    let row_gap = if prominent { 38 } else { META_ROW_GAP };
     let last_baseline = panel.y + panel.height - 30;
     let first_baseline = last_baseline
-        .saturating_sub(u32::try_from(row_count.saturating_sub(1)).unwrap_or(0) * META_ROW_GAP);
+        .saturating_sub(u32::try_from(row_count.saturating_sub(1)).unwrap_or(0) * row_gap);
 
     let mut baseline = first_baseline;
     if let Some((value, kind, anchor_ms)) = time {
@@ -685,27 +735,36 @@ fn render_standard_metadata(
         } else {
             (MetaIcon::Clock, "#f3bf4f")
         };
-        render_meta_icon(body, icon, text_x, baseline, color);
+        render_meta_icon(body, icon, text_x, baseline, color, prominent);
         dynamic_time_text(
             body,
-            text_x + 30,
+            text_x + if prominent { 38 } else { 30 },
             baseline,
             index,
             kind,
             anchor_ms,
             &value,
             color,
+            if prominent { 25 } else { 17 },
+            if prominent { "700" } else { "600" },
         );
-        baseline += META_ROW_GAP;
+        baseline += row_gap;
     }
 
     if let Some(party) = party {
-        render_meta_icon(body, MetaIcon::Party, text_x, baseline, "#c0c8e2");
+        render_meta_icon(
+            body,
+            MetaIcon::Party,
+            text_x,
+            baseline,
+            "#c0c8e2",
+            prominent,
+        );
         text(
             body,
-            text_x + 32,
+            text_x + if prominent { 38 } else { 32 },
             baseline,
-            18,
+            if prominent { 20 } else { 18 },
             "#c0c8e2",
             "500",
             &format!("Party {} / {}", party.current_size, party.max_size),
@@ -842,17 +901,42 @@ enum MetaIcon {
     Party,
 }
 
-fn render_meta_icon(body: &mut String, icon: MetaIcon, x: u32, baseline: u32, color: &str) {
-    let cy = baseline.saturating_sub(6);
+fn render_meta_icon(
+    body: &mut String,
+    icon: MetaIcon,
+    x: u32,
+    baseline: u32,
+    color: &str,
+    prominent: bool,
+) {
+    let cy = baseline.saturating_sub(if prominent { 7 } else { 6 });
     match icon {
-        MetaIcon::Clock => body.push_str(&format!(
-            r##"<circle cx="{}" cy="{cy}" r="9" fill="none" stroke="{color}" stroke-width="2"/><path d="M {} {} V {} M {} {} L {} {}" fill="none" stroke="{color}" stroke-width="2" stroke-linecap="round"/>"##,
-            x + 10, x + 10, cy, cy.saturating_sub(5), x + 10, cy, x + 14, cy + 2
-        )),
-        MetaIcon::Gamepad => body.push_str(&format!(
-            r##"<svg x="{x}" y="{}" width="24" height="20" viewBox="0 0 24 24" overflow="visible"><path d="M21.58 16.09 20.49 8.43A5.02 5.02 0 0 0 15.54 4H8.46A5.02 5.02 0 0 0 3.51 8.43l-1.09 7.66A3 3 0 0 0 7.51 18.12L9.63 16h4.74l2.12 2.12a3 3 0 0 0 5.09-2.03ZM10 11H8v2H6v-2H4V9h2V7h2v2h2v2Zm5.5 2a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm3-3a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Z" fill="{color}"/></svg>"##,
-            cy.saturating_sub(12)
-        )),
+        MetaIcon::Clock => {
+            let radius = if prominent { 11 } else { 9 };
+            let hand = if prominent { 6 } else { 5 };
+            let minute = if prominent { 5 } else { 4 };
+            body.push_str(&format!(
+                r##"<circle cx="{}" cy="{cy}" r="{radius}" fill="none" stroke="{color}" stroke-width="{}"/><path d="M {} {} V {} M {} {} L {} {}" fill="none" stroke="{color}" stroke-width="{}" stroke-linecap="round"/>"##,
+                x + 12,
+                if prominent { 2.4 } else { 2.0 },
+                x + 12,
+                cy,
+                cy.saturating_sub(hand),
+                x + 12,
+                cy,
+                x + 12 + minute,
+                cy + 2,
+                if prominent { 2.4 } else { 2.0 },
+            ));
+        }
+        MetaIcon::Gamepad => {
+            let width = if prominent { 30 } else { 24 };
+            let height = if prominent { 25 } else { 20 };
+            let y = cy.saturating_sub(if prominent { 15 } else { 12 });
+            body.push_str(&format!(
+                r##"<svg x="{x}" y="{y}" width="{width}" height="{height}" viewBox="0 0 24 24" overflow="visible"><path d="M21.58 16.09 20.49 8.43A5.02 5.02 0 0 0 15.54 4H8.46A5.02 5.02 0 0 0 3.51 8.43l-1.09 7.66A3 3 0 0 0 7.51 18.12L9.63 16h4.74l2.12 2.12a3 3 0 0 0 5.09-2.03ZM10 11H8v2H6v-2H4V9h2V7h2v2h2v2Zm5.5 2a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm3-3a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Z" fill="{color}"/></svg>"##
+            ));
+        }
         MetaIcon::Music => body.push_str(&format!(
             r##"<path d="M {} {} V {} L {} {} V {}" fill="none" stroke="{color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="{}" cy="{}" r="3.2" fill="{color}"/><circle cx="{}" cy="{}" r="3.2" fill="{color}"/>"##,
             x + 10, cy + 3, cy.saturating_sub(7), x + 21, cy.saturating_sub(10), cy,
@@ -876,9 +960,11 @@ fn dynamic_time_text(
     anchor_ms: u64,
     value: &str,
     color: &str,
+    font_size: u32,
+    weight: &str,
 ) {
     body.push_str(&format!(
-        r##"<text id="activity-time-{index}" data-time-kind="{kind}" data-anchor-ms="{anchor_ms}" x="{x}" y="{y}" fill="{color}" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="17" font-weight="600">{}</text>"##,
+        r##"<text id="activity-time-{index}" data-time-kind="{kind}" data-anchor-ms="{anchor_ms}" x="{x}" y="{y}" fill="{color}" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="{font_size}" font-weight="{weight}">{}</text>"##,
         escape_xml(value)
     ));
 }
@@ -1228,8 +1314,8 @@ mod tests {
     use crate::state::{ActivityKind, ActivitySnapshot, ActivityTimestampsSnapshot};
 
     use super::{
-        activity_accent_for, activity_title_style, fitted_text, format_duration, media_progress,
-        spotify_activity_expired, truncate_chars,
+        Panel, activity_accent_for, activity_title_style, fitted_text, format_duration,
+        media_progress, render_app_title, spotify_activity_expired, truncate_chars,
     };
 
     #[test]
@@ -1276,6 +1362,58 @@ mod tests {
             activity_accent_for("Genshin Impact", ActivityKind::Playing),
             "#56c7ef"
         );
+    }
+
+    #[test]
+    fn playing_title_uses_neutral_verb_and_dynamic_name_accent() {
+        let activity = ActivitySnapshot {
+            application_id: None,
+            assets: None,
+            details: None,
+            kind: ActivityKind::Playing,
+            name: "Wuthering Waves".to_owned(),
+            party: None,
+            state: None,
+            timestamps: None,
+        };
+        assert_eq!(
+            activity_title_style(&activity),
+            ("Playing", "#f8f8ff", "#8f7cff")
+        );
+    }
+
+    #[test]
+    fn compact_playing_title_uses_the_same_stacked_hierarchy() {
+        let activity = ActivitySnapshot {
+            application_id: None,
+            assets: None,
+            details: None,
+            kind: ActivityKind::Playing,
+            name: "Wuthering Waves".to_owned(),
+            party: None,
+            state: None,
+            timestamps: None,
+        };
+        let mut svg = String::new();
+        render_app_title(
+            &mut svg,
+            &activity,
+            300,
+            250,
+            Panel {
+                x: 62,
+                y: 228,
+                width: 815,
+                height: 300,
+            },
+        );
+
+        assert!(svg.contains("font-size=\"16\""));
+        assert!(svg.contains(">Playing</text>"));
+        assert!(svg.contains("font-size=\"34\""));
+        assert!(svg.contains("fill=\"#8f7cff\""));
+        assert!(svg.contains(">Wuthering Waves</text>"));
+        assert!(!svg.contains("<tspan"));
     }
 
     #[test]
