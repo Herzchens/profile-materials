@@ -1,6 +1,7 @@
 pub mod cards;
 mod client;
 pub mod lkg;
+mod public_contributions;
 pub mod stats;
 
 use std::{
@@ -12,6 +13,7 @@ use std::{
 
 use crate::{clock, config::GitHubConfig};
 use client::{ClientError, GitHubClient};
+use public_contributions::PublicContributionClient;
 use stats::{GitHubSnapshot, build_snapshot};
 
 const LOW_RATE_LIMIT_THRESHOLD: u64 = 100;
@@ -69,11 +71,32 @@ pub async fn run(config: GitHubConfig, store: Arc<GitHubStore>) -> Result<(), Ru
     };
 
     let client = GitHubClient::new(token).map_err(RunError::BuildClient)?;
+    let public_contributions =
+        PublicContributionClient::new().map_err(RunError::BuildPublicContributionClient)?;
 
     loop {
         let attempt_started = tokio::time::Instant::now();
         let (delay, backoff_from_completion) = match client.fetch_profile(&config.username).await {
-            Ok(raw) => {
+            Ok(mut raw) => {
+                match public_contributions
+                    .fetch_calendar(&config.username, &raw.user.contributions.calendar)
+                    .await
+                {
+                    Ok(calendar) => raw.user.contributions.calendar = calendar,
+                    Err(error) => {
+                        tracing::warn!(
+                            username = %config.username,
+                            error = %error,
+                            "GitHub public contribution refresh failed; keeping last known snapshot"
+                        );
+                        let sleep_for = config
+                            .poll_interval
+                            .saturating_sub(attempt_started.elapsed());
+                        tokio::time::sleep(sleep_for).await;
+                        continue;
+                    }
+                }
+
                 let collected_at_unix_ms = match clock::unix_time_millis() {
                     Ok(now) => now,
                     Err(error) => {
@@ -144,12 +167,19 @@ pub async fn run(config: GitHubConfig, store: Arc<GitHubStore>) -> Result<(), Ru
 #[derive(Debug)]
 pub enum RunError {
     BuildClient(reqwest::Error),
+    BuildPublicContributionClient(reqwest::Error),
 }
 
 impl fmt::Display for RunError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::BuildClient(error) => write!(formatter, "failed to build GitHub client: {error}"),
+            Self::BuildPublicContributionClient(error) => {
+                write!(
+                    formatter,
+                    "failed to build GitHub public contribution client: {error}"
+                )
+            }
         }
     }
 }
@@ -157,7 +187,7 @@ impl fmt::Display for RunError {
 impl Error for RunError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::BuildClient(error) => Some(error),
+            Self::BuildClient(error) | Self::BuildPublicContributionClient(error) => Some(error),
         }
     }
 }
