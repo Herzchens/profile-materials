@@ -175,7 +175,10 @@ impl fmt::Display for RunError {
         match self {
             Self::BuildClient(error) => write!(formatter, "failed to build GitHub client: {error}"),
             Self::BuildPublicContributionClient(error) => {
-                write!(formatter, "failed to build GitHub public contribution client: {error}")
+                write!(
+                    formatter,
+                    "failed to build GitHub public contribution client: {error}"
+                )
             }
         }
     }

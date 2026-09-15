@@ -50,8 +50,8 @@ impl PublicContributionClient {
     ) -> Result<RawContributionCalendar, PublicContributionError> {
         let current_date = latest_contribution_date(rolling_calendar)
             .ok_or(PublicContributionError::InvalidCalendar)?;
-        let current_year = contribution_year(current_date)
-            .ok_or(PublicContributionError::InvalidCalendar)?;
+        let current_year =
+            contribution_year(current_date).ok_or(PublicContributionError::InvalidCalendar)?;
 
         let historical_days = self.historical_days(login, current_year).await?;
         let current_days = self.current_days(login, current_year).await?;
@@ -159,11 +159,7 @@ impl PublicContributionClient {
         Ok(days)
     }
 
-    async fn fetch_html(
-        &self,
-        login: &str,
-        url: &str,
-    ) -> Result<String, PublicContributionError> {
+    async fn fetch_html(&self, login: &str, url: &str) -> Result<String, PublicContributionError> {
         let response = self
             .client
             .get(url)
@@ -331,8 +327,7 @@ fn parse_contribution_days(html: &str) -> Result<Vec<RawContributionDay>, Public
             .unwrap_or(0);
         let direct_count = html_attribute(tag, "data-count")
             .and_then(|value| value.replace(',', "").parse::<u64>().ok());
-        let tooltip_count = html_attribute(tag, "id")
-            .and_then(|id| tooltips.get(id).copied());
+        let tooltip_count = html_attribute(tag, "id").and_then(|id| tooltips.get(id).copied());
         let count = direct_count.or(tooltip_count).unwrap_or(0);
 
         if level > 0 && count == 0 {
@@ -448,13 +443,22 @@ impl fmt::Display for PublicContributionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Http { status, body } => {
-                write!(formatter, "GitHub public contribution HTTP error {status}: {body}")
+                write!(
+                    formatter,
+                    "GitHub public contribution HTTP error {status}: {body}"
+                )
             }
             Self::InvalidCalendar => {
                 formatter.write_str("GitHub rolling contribution calendar has no current date")
             }
-            Self::Parse(message) => write!(formatter, "GitHub public contribution parse error: {message}"),
-            Self::Request(error) => write!(formatter, "GitHub public contribution request error: {error}"),
+            Self::Parse(message) => write!(
+                formatter,
+                "GitHub public contribution parse error: {message}"
+            ),
+            Self::Request(error) => write!(
+                formatter,
+                "GitHub public contribution request error: {error}"
+            ),
         }
     }
 }
