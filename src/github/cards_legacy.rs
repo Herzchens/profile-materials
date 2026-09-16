@@ -4,14 +4,14 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 use super::stats::{GitHubSnapshot, is_stale};
 
-const SVG_REVISION: u8 = 11;
+const SVG_REVISION: u8 = 12;
 const TITLE: &str = "#70A5FD";
 const ICON: &str = "#BF91F3";
 const TEXT: &str = "#38BDAE";
 const BG: &str = "#1A1B27";
 const MUTED: &str = "#A8A8A8";
-const STREAK_MASCOT_LIT: &[u8] = include_bytes!("../../assets/streak/mascot-campfire-lit.png");
-const STREAK_MASCOT_OUT: &[u8] = include_bytes!("../../assets/streak/mascot-campfire-out.png");
+const STREAK_MASCOT_LIT: &[u8] = include_bytes!("../../assets/streak/mascot-campfire-lit.webp");
+const STREAK_MASCOT_OUT: &[u8] = include_bytes!("../../assets/streak/mascot-campfire-out.webp");
 static STREAK_MASCOT_LIT_DATA_URI: OnceLock<String> = OnceLock::new();
 static STREAK_MASCOT_OUT_DATA_URI: OnceLock<String> = OnceLock::new();
 
@@ -378,7 +378,7 @@ fn streak_mascot_data_uri(state: CampfireState) -> &'static str {
     };
 
     cache
-        .get_or_init(|| format!("data:image/png;base64,{}", BASE64_STANDARD.encode(asset)))
+        .get_or_init(|| format!("data:image/webp;base64,{}", BASE64_STANDARD.encode(asset)))
         .as_str()
 }
 
@@ -564,7 +564,7 @@ mod tests {
         assert!(!card.body().contains("M230 84h10M235 79v10"));
         assert!(card.body().contains("class=\"flame-motion\""));
         assert!(card.body().contains("scale(1.22 1)"));
-        assert!(card.body().contains("data:image/png;base64,"));
+        assert!(card.body().contains("data:image/webp;base64,"));
         assert!(card.body().contains("data-mascot-state=\"lit\""));
         assert!(
             card.body()
