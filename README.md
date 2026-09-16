@@ -1,115 +1,90 @@
-# profile-materials
+<p align="center">
+  <img
+    src="https://raw.githubusercontent.com/Herzchens/profile-materials/main/assets/hero/banner.png"
+    alt="ItzHerzchen — I build things I want to use, then overthink the edge cases."
+    width="100%"
+  />
+</p>
 
-Source for the ItzHerzchen profile service and profile assets.
+<p align="center">
+  <a href="https://discord.com/users/984085171408080897">
+    <img
+      src="https://profile.tailed8451.ts.net/v1/svg/presence.svg?compat=activity-cards-v2"
+      alt="Live Discord presence"
+      width="100%"
+    />
+  </a>
+</p>
 
-## Temporary GitHub compatibility preview
+<p align="center">
+  <img
+    src="https://profile.tailed8451.ts.net/v1/svg/github-streak.svg?compat=campfire-v12"
+    alt="GitHub contribution streak"
+    width="100%"
+  />
+</p>
 
-[![Live presence card](https://profile.tailed8451.ts.net/v1/svg/presence.svg?compat=activity-cards-v2)](https://profile.tailed8451.ts.net/presence)
+<p align="center">
+  <img
+    src="https://profile.tailed8451.ts.net/v1/svg/github-stats.svg?compat=stats-v2"
+    alt="GitHub statistics"
+    width="100%"
+  />
+</p>
 
-[![GitHub stats compatibility preview](https://profile.tailed8451.ts.net/v1/svg/github-stats.svg?compat=stats-v2)](https://profile.tailed8451.ts.net/v1/svg/github-stats.svg?compat=stats-v2)
+## About me
 
-[![Contribution streak compatibility preview](https://profile.tailed8451.ts.net/v1/svg/github-streak.svg?compat=campfire-v12)](https://profile.tailed8451.ts.net/v1/svg/github-streak.svg?compat=campfire-v12)
+I'm **ItzHerzchen** — a student, freelancer, and open-source maintainer from **Hanoi, Vietnam**. **She / Her.**
 
-The stats preview keeps the existing TokyoNight-oriented visual language while replacing font-dependent symbol glyphs with self-contained SVG icons. It emphasizes account output without fabricated trend percentages or a generated heatmap. The streak preview intentionally embeds the live origin URL through normal GitHub Markdown so GitHub Camo compatibility can be checked after the branch build is deployed for testing. The origin SVG embeds its mascot raster asset directly, switches between lit and extinguished mascot poses from the contribution state, uses self-contained SVG animation for the lit campfire state, keeps the side contribution metrics stationary, and keeps inactive smoke static. The presence preview is cropped to the rounded card boundary instead of painting an opaque canvas outside the border, so GitHub README backgrounds do not show a rectangular halo around the card.
+I like building things I actually want to use, especially around Discord, automation, realtime state, media pipelines, and systems that still need to behave sensibly when an external dependency does not.
 
-The service reads Discord presence through an official bot, keeps the last known presence across restarts, streams changes over SSE, and exposes health endpoints for deployment. Discord activity artwork is resolved into usable image URLs with deterministic fallbacks. Spotify playback is collected independently through the Spotify Web API when configured; Discord Spotify RPC is excluded from the presentation layer so Spotify visibility does not depend on Discord presence propagation.
+I'm introverted, endlessly curious, a little perfection-obsessed, and very good at turning "this should be simple" into a tour of every edge case I can find. Away from code, it's usually **cats, games, music**, or another random technical rabbit hole.
 
-It also collects GitHub profile statistics and serves SVG cards for GitHub stats, top languages, contribution streaks, Discord presence, Spotify activity, and the production profile hero. The GitHub cards follow the visual language and statistics semantics of the profile's existing GitHub Readme Stats setup while using this service's own refresh, revision, and last-known-good state.
+> **Understand the problem before trusting the solution.**
 
-## Requirements
+For larger systems, I use a custom **Dynamic Decomposition Reasoning Graph (DDRG)** workflow to break down requirements, dependencies, failure modes, and architectural decisions before implementation. I care a lot about correctness, performance, source-of-truth ownership, bounded behavior, graceful degradation, rollback, maintainability, and UX.
 
-- Rust toolchain from `rust-toolchain.toml`
-- an official Discord application/bot
-- the bot and target account in the configured target guild
-- **Presence Intent** (`GUILD_PRESENCES`) enabled for the bot
+## Featured work
 
-The service does not require Message Content intent and must not be run with a Discord user token or selfbot token.
+### [QuestUI](https://github.com/Herzchens/QuestUI)
 
-## Configuration
+A standalone Vencord userplugin for quick access to Discord Quests and a compact live view of their state. It is UI-focused rather than a progress engine, with filtering and sorting, diagnostics, notifications, an Event Log, manual fail-closed Quest actions, and optional Orion companion controls.
 
-Set these environment variables before starting the service:
+### [Serenya](https://github.com/Herzchens/Serenya-Bot)
 
-```text
-DISCORD_BOT_TOKEN=<official bot token>
-TARGET_DISCORD_USER_ID=<target user snowflake>
-TARGET_GUILD_ID=<shared guild snowflake>
+A Rust Discord music bot built for stable multi-guild playback, low latency, and operational resilience. It combines Discord voice, FFmpeg, multi-provider metadata, native YouTube stream resolution, caching, bounded concurrency, degraded modes, and graceful shutdown.
 
-PROFILE_BIND_ADDR=127.0.0.1:3000        # optional; default shown
-PROFILE_STATE_PATH=state/presence.json  # optional; default shown
-PROFILE_STALE_AFTER_SECS=120            # optional; default shown
-PROFILE_UNAVAILABLE_AFTER_SECS=600      # optional; default shown
+### [Himeko](https://github.com/Herzchens/Himeko-Bot)
 
-GITHUB_TOKEN=<read-only token>           # optional; enables GitHub stats
-GITHUB_USERNAME=Herzchens                # optional; default shown
-GITHUB_FEATURED_REPOS=repo-a,repo-b      # optional; ordered, up to 3 shown
-GITHUB_STATE_PATH=state/github.json      # optional; default shown
-GITHUB_POLL_SECS=15                      # optional; minimum 15
-GITHUB_STALE_AFTER_SECS=21600            # optional; default shown
+A personal Rust Discord bot for multi-provider TTS, AI chat, voice-session utilities, rank management, and small server tools. It is intentionally more experimental, while still using bounded scheduling, isolated guild state, validated hot reload, and recovery-minded runtime behavior.
 
-SPOTIFY_CLIENT_ID=<client id>            # optional as a complete Spotify group
-SPOTIFY_CLIENT_SECRET=<client secret>    # required when Spotify is enabled
-SPOTIFY_REFRESH_TOKEN=<refresh token>    # required when Spotify is enabled
-SPOTIFY_REFRESH_TOKEN_PATH=state/spotify-refresh-token # optional; default
-SPOTIFY_POLL_SECS=5                      # optional; minimum/default 5
+### [Graphite](https://github.com/Herzchens/Graphite-Bot) — Active Development
 
-RUST_LOG=info                            # optional
-```
+A persistent Discord game backend in Rust with PostgreSQL as its authoritative state store. Graphite is still being built; the current work focuses on the production foundation and spec-first behavior around transactional state, idempotency, deterministic operations, economy/storage primitives, and fail-closed policy rather than presenting unfinished gameplay systems as complete.
 
-`PROFILE_STALE_AFTER_SECS` must be lower than `PROFILE_UNAVAILABLE_AFTER_SECS`. `PROFILE_BIND_ADDR` defaults to loopback so the service can sit behind a reverse proxy without exposing the listener directly.
+## Open-source contributions
 
-GitHub collection is optional. Without `GITHUB_TOKEN`, the Discord and SVG service still runs and the GitHub endpoints return the last persisted GitHub snapshot when one exists, or a neutral unavailable state otherwise. The token is never written to the GitHub LKG file. A token limited to public data produces public-only statistics; if private repositories should contribute to aggregate commit and language statistics, the token must have read access to those repositories.
+I also contribute upstream to [**Orion / discord-quest-completer**](https://github.com/nyxxbit/discord-quest-completer). My merged work there has included per-Quest pause/resume, engine generation and liveness hardening, Windows installer/updater safety, structured companion events, OAuth cleanup safety, scheduler metadata, and companion APIs used by QuestUI.
 
-The GitHub collector refreshes every 15 seconds by default. GitHub rate-limit responses and a low remaining GraphQL budget automatically make the collector back off. `GITHUB_STALE_AFTER_SECS` must be greater than the poll interval. The streak subsystem reads GitHub's public contribution-calendar view separately so anonymized private contribution counts match what profile visitors and the existing streak card can see. The current public contribution year is cached for one minute, while completed years are cached in memory for six hours.
+You can see the related [merged pull requests here](https://github.com/nyxxbit/discord-quest-completer/pulls?q=is%3Apr+is%3Amerged+author%3AHerzchens).
 
-## Run
+## Toolbox
 
-```bash
-cargo run --locked
-```
+**Mostly Rust lately.** I also work with **TypeScript / JavaScript, Python, C / C++, C#, and Java**.
 
-Available endpoints:
+Common pieces in my projects include **PostgreSQL, Tokio, Serenity / Poise, Songbird, FFmpeg, GitHub Actions, Linux, Discord Gateway / APIs**, and whatever small amount of infrastructure is actually necessary to make the system reliable.
 
-```text
-GET /v1/public/presence
-GET /v1/public/github
-GET /v1/live
-GET /v1/svg/hero.svg
-GET /v1/svg/hero-test.svg
-GET /v1/svg/presence.svg
-GET /v1/svg/spotify.svg?layout=mini|compact|wide
-GET /v1/svg/github.svg
-GET /v1/svg/github-stats.svg
-GET /v1/svg/github-languages.svg
-GET /v1/svg/github-streak.svg
-GET /debug/live
-GET /health/live
-GET /health/ready
-```
+I don't treat a long technology list as an expertise score. I care more about understanding the problem, choosing the right constraints, and being able to explain why the resulting system behaves the way it does.
 
-`/v1/public/presence` returns the current allow-listed presence state. Activities include a resolved artwork URL when Discord provides a usable asset plus a stable fallback key for the renderer. When native Spotify playback is active, the response also includes a compact `spotify` object with title, artist, album, cover URL, and track timing information. Listening activities that provide both start and end timestamps render a live progress bar; long media metadata is fitted to the card instead of being ellipsized.
+## Get in touch
 
-`/v1/live` streams the same public presence representation over server-sent events. `/debug/live` is a minimal browser view of that stream.
+Discord is the best place to reach me: **[open my Discord profile](https://discord.com/users/984085171408080897)**.
 
-The production hero at `/v1/svg/hero.svg` embeds the final authored banner PNG unchanged. It does not redraw the character, profile typography, decorative artwork, or existing banner composition, and it does not render Discord, RPC, game, application, or Spotify state. Realtime presence stays on the dedicated presence and Spotify cards so the profile README can place and link those separately without covering the hero artwork.
+I'm happy to talk about software, open source, weird edge cases, games, or cats.
 
-The GitHub collector follows the same core statistics semantics as the profile's existing GitHub Readme Stats setup. Authenticated GraphQL and commit search remain the source for overall account, repository, language, and rank statistics. Contribution streaks use GitHub's public profile contribution calendars instead of the authenticated account's self-view because GitHub can omit anonymized private contributions from a self-owned token's calendar even when those counts are visible on the public profile. The service reconstructs the all-time total, active days, current streak, longest streak, and contribution range from those public daily counts, matching the public-view semantics used by `github-readme-streak-stats`; the current streak may continue through yesterday when the current calendar day is still empty.
-
-Top languages follow the existing card configuration as well: up to 100 owned, non-fork repositories are considered, up to 10 languages are read from each repository, and the displayed ranking keeps up to 20 languages. Each language is weighted with `size_weight=0.5` and `count_weight=0.5`, so both reported byte size and the number of repositories using the language affect its share. Private repositories participate when the configured token can read them.
-
-Private repository details are not published by the service. Their names, URLs, descriptions, and individual project metadata are excluded from the public response and SVG. Public language output contains only the aggregate language name, color, and percentage. Featured project cards are selected only from public, non-fork, non-archived repositories.
-
-`GITHUB_FEATURED_REPOS` chooses public project cards in the order listed. When it is not set, the service selects up to three eligible public repositories by stars, then recent push time. A failed GitHub refresh keeps the last-known-good snapshot; old snapshots are marked stale instead of making the card disappear.
-
-`/v1/svg/github-stats.svg` is the wide account-output stats card, `/v1/svg/github-languages.svg` keeps the compact most-used-languages view, and `/v1/svg/github-streak.svg` is the campfire-style contribution streak card. The stats card uses exact snapshot metrics, self-contained vector icons, and the collector's rank percentile; it does not invent year-over-year changes or contribution-history cells that the snapshot does not contain. The streak card embeds the authored mascot assets, derives its total-contribution range and streaks from GitHub's public all-time contribution history, keeps the current streak through an empty current day, switches between the active roasting pose and extinguished waiting pose, changes the campfire between lit, extinguished, and neutral states based on today's contribution state and snapshot freshness, mutes the current-streak number outside the lit state, and keeps the total-contribution and longest-streak blocks stationary for a calmer presentation. `/v1/svg/github.svg` keeps the broader combined GitHub summary view for compatibility. The presence card keeps all distinct current activities after same-name duplicate selection, while the Spotify endpoint has `mini`, `compact`, and `wide` layouts. `hero-test.svg` remains a plain diagnostic render with visible revisions for cache experiments.
-
-SVG responses use `ETag` revalidation. Dynamic presence and GitHub cards use their source revisions to avoid unnecessary rerenders, while the production hero has a stable static ETag because its body does not depend on presence state. A matching `If-None-Match` request receives `304 Not Modified`.
-
-The dynamic SVG cards can be embedded through GitHub Camo. Remote Discord and Spotify raster artwork is fetched from allow-listed origins and embedded into the SVG, so the rendered card does not depend on nested external image requests. If artwork cannot be embedded, the renderer uses its deterministic fallback instead of emitting the remote image URL. The final hero banner is embedded as a local PNG data URI as well.
-
-GitHub controls Camo caching, so dynamic cards embedded in a README should be treated as best-effort near-live views rather than a realtime channel. In the current deployment, an observed presence revision change became visible through the same Camo URL about two seconds after the origin changed; refresh timing is not guaranteed.
-
-GitHub does not provide reliable clickable subregions inside a Camo-rendered SVG. A Discord presence card that should open the Discord profile is therefore linked by wrapping the whole image in the profile README, rather than by placing an internal SVG link over part of the graphic.
-
-Before the first valid target presence event, the public endpoint and SVG views use a neutral waiting state. A Gateway transport failure does not fabricate an offline user state. The service keeps the last-known-good snapshot during the grace window, marks it stale after the configured stale threshold, and switches to a neutral unavailable view after the configured unavailable threshold. A real target `PRESENCE_UPDATE` restores fresh state.
-
-The presence and GitHub LKG files contain only normalized state and collection timestamps. Credentials and session data are not persisted there.
+<p align="center">
+  <sub>
+    Profile visuals and live cards are self-hosted from
+    <a href="https://github.com/Herzchens/profile-materials">profile-materials</a>.
+  </sub>
+</p>
