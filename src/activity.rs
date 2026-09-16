@@ -1,5 +1,8 @@
 use crate::state::{ActivityKind, ActivitySnapshot};
 
+const LARGE_ARTWORK_SIZE: u16 = 256;
+const SMALL_ARTWORK_SIZE: u16 = 64;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ArtworkSource {
     DiscordApplication,
@@ -54,6 +57,7 @@ pub fn resolve_activity_artwork(activity: &ActivitySnapshot) -> ResolvedActivity
             .as_ref()
             .and_then(|assets| assets.large_image.as_deref()),
         fallback_key,
+        LARGE_ARTWORK_SIZE,
     );
     let small = activity
         .assets
@@ -61,19 +65,34 @@ pub fn resolve_activity_artwork(activity: &ActivitySnapshot) -> ResolvedActivity
         .and_then(|assets| assets.small_image.as_deref())
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|raw| resolve_asset(activity, Some(raw), fallback_key));
+        .map(|raw| resolve_asset(activity, Some(raw), fallback_key, SMALL_ARTWORK_SIZE));
 
     ResolvedActivityArtwork { large, small }
 }
 
 pub fn resolve_artwork(activity: &ActivitySnapshot) -> ResolvedArtwork {
-    resolve_activity_artwork(activity).large
+    let mut artwork = resolve_activity_artwork(activity).large;
+    artwork.url = artwork.url.map(|url| match artwork.source {
+        ArtworkSource::DiscordApplication => strip_query(url),
+        ArtworkSource::DiscordApplicationIcon => url.replace("?size=256", "?size=512"),
+        ArtworkSource::DiscordMediaProxy => strip_query(url),
+        ArtworkSource::Spotify | ArtworkSource::LocalFallback => url,
+    });
+    artwork
+}
+
+fn strip_query(mut url: String) -> String {
+    if let Some(index) = url.find('?') {
+        url.truncate(index);
+    }
+    url
 }
 
 fn resolve_asset(
     activity: &ActivitySnapshot,
     raw: Option<&str>,
     fallback_key: &'static str,
+    requested_size: u16,
 ) -> ResolvedArtwork {
     let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
         return ResolvedArtwork {
@@ -89,7 +108,9 @@ fn resolve_asset(
         return ResolvedArtwork {
             fallback_key,
             source: ArtworkSource::DiscordMediaProxy,
-            url: Some(format!("https://media.discordapp.net/{image_id}")),
+            url: Some(format!(
+                "https://media.discordapp.net/{image_id}?width={requested_size}&height={requested_size}"
+            )),
         };
     }
 
@@ -113,7 +134,7 @@ fn resolve_asset(
             fallback_key,
             source: ArtworkSource::DiscordApplicationIcon,
             url: Some(format!(
-                "https://cdn.discordapp.com/app-icons/{application_id}/{icon_hash}.png?size=512"
+                "https://cdn.discordapp.com/app-icons/{application_id}/{icon_hash}.png?size={requested_size}"
             )),
         };
     }
@@ -126,7 +147,7 @@ fn resolve_asset(
             fallback_key,
             source: ArtworkSource::DiscordApplication,
             url: Some(format!(
-                "https://cdn.discordapp.com/app-assets/{application_id}/{raw}.png"
+                "https://cdn.discordapp.com/app-assets/{application_id}/{raw}.png?size={requested_size}"
             )),
         };
     }
@@ -300,7 +321,7 @@ mod tests {
     }
 
     #[test]
-    fn resolves_large_and_small_application_assets() {
+    fn resolves_large_and_small_application_assets_at_render_sizes() {
         let mut activity = activity(
             "VALORANT",
             ActivityKind::Playing,
@@ -310,10 +331,15 @@ mod tests {
         activity.assets.as_mut().unwrap().small_image = Some("987654321".to_owned());
 
         let artwork = resolve_activity_artwork(&activity);
-        assert!(artwork.large.url.is_some());
+        assert_eq!(
+            artwork.large.url.as_deref(),
+            Some(
+                "https://cdn.discordapp.com/app-assets/1443350165678198935/1514484181319811163.png?size=256"
+            )
+        );
         assert_eq!(
             artwork.small.unwrap().url.as_deref(),
-            Some("https://cdn.discordapp.com/app-assets/1443350165678198935/987654321.png")
+            Some("https://cdn.discordapp.com/app-assets/1443350165678198935/987654321.png?size=64")
         );
     }
 

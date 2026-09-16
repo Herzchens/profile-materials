@@ -1,12 +1,20 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use futures_util::{StreamExt, future::join_all};
+use futures_util::{
+    StreamExt,
+    future::{join, join_all},
+};
 use reqwest::{Client, Url, header::CONTENT_TYPE, redirect::Policy};
 use tokio::sync::Mutex;
 
-const MAX_ARTWORK_BYTES: usize = 1024 * 1024;
-const MAX_CACHE_ENTRIES: usize = 64;
+const MAX_ARTWORK_BYTES: usize = 384 * 1024;
+const MAX_CACHE_ENTRIES: usize = 96;
 
 pub struct ArtworkEmbedder {
     cache: Mutex<HashMap<String, Arc<str>>>,
@@ -16,6 +24,9 @@ pub struct ArtworkEmbedder {
 pub struct EmbeddedArtworkBatch {
     complete: bool,
     images: HashMap<String, Arc<str>>,
+    backdrop_urls: HashSet<String>,
+    backdrops: HashMap<String, Arc<str>>,
+    href_counts: RefCell<HashMap<String, u32>>,
 }
 
 impl Default for EmbeddedArtworkBatch {
@@ -23,6 +34,9 @@ impl Default for EmbeddedArtworkBatch {
         Self {
             complete: true,
             images: HashMap::new(),
+            backdrop_urls: HashSet::new(),
+            backdrops: HashMap::new(),
+            href_counts: RefCell::new(HashMap::new()),
         }
     }
 }
@@ -33,6 +47,23 @@ impl EmbeddedArtworkBatch {
     }
 
     pub fn href(&self, url: &str) -> Option<&str> {
+        // Presence panels ask for the same large Discord artwork twice: backdrop first,
+        // foreground second. Alternate a tiny 64px derivative into backdrop reads so the
+        // blurred full-panel layer does not serialize the 256px base64 payload a second time.
+        // Small artwork and identity assets are not marked as backdrop candidates.
+        if self.backdrop_urls.contains(url) {
+            let use_backdrop = {
+                let mut counts = self.href_counts.borrow_mut();
+                let count = counts.entry(url.to_owned()).or_insert(0);
+                let use_backdrop = (*count).is_multiple_of(2);
+                *count = count.saturating_add(1);
+                use_backdrop
+            };
+            if use_backdrop {
+                return self.backdrops.get(url).map(AsRef::as_ref);
+            }
+        }
+
         self.images.get(url).map(AsRef::as_ref)
     }
 }
@@ -58,7 +89,21 @@ impl ArtworkEmbedder {
             return EmbeddedArtworkBatch::default();
         }
 
-        let results = join_all(urls.iter().map(|url| self.embed(url))).await;
+        let backdrop_requests: Vec<(String, String)> = urls
+            .iter()
+            .filter_map(|url| backdrop_thumbnail_url(url).map(|backdrop| (url.clone(), backdrop)))
+            .collect();
+
+        let (results, backdrop_results) = join(
+            join_all(urls.iter().map(|url| self.embed(url))),
+            join_all(
+                backdrop_requests
+                    .iter()
+                    .map(|(_, backdrop_url)| self.embed(backdrop_url)),
+            ),
+        )
+        .await;
+
         let mut batch = EmbeddedArtworkBatch::default();
 
         for (url, embedded) in urls.iter().zip(results) {
@@ -69,6 +114,13 @@ impl ArtworkEmbedder {
                 None => {
                     batch.complete = false;
                 }
+            }
+        }
+
+        for ((original_url, _), embedded) in backdrop_requests.iter().zip(backdrop_results) {
+            batch.backdrop_urls.insert(original_url.clone());
+            if let Some(data_uri) = embedded {
+                batch.backdrops.insert(original_url.clone(), data_uri);
             }
         }
 
@@ -207,6 +259,44 @@ fn trusted_artwork_url(raw_url: &str) -> Option<Url> {
     trusted.then_some(url)
 }
 
+fn backdrop_thumbnail_url(raw_url: &str) -> Option<String> {
+    let mut url = trusted_artwork_url(raw_url)?;
+    let host = url.host_str()?.to_owned();
+    let path = url.path().to_owned();
+
+    match host.as_str() {
+        "cdn.discordapp.com"
+            if path.starts_with("/app-assets/") || path.starts_with("/app-icons/") =>
+        {
+            let size = url
+                .query_pairs()
+                .find_map(|(key, value)| (key == "size").then_some(value.into_owned()));
+            if size.as_deref() != Some("256") {
+                return None;
+            }
+            url.set_query(Some("size=64"));
+        }
+        "media.discordapp.net" => {
+            let mut width = None;
+            let mut height = None;
+            for (key, value) in url.query_pairs() {
+                match key.as_ref() {
+                    "width" => width = Some(value.into_owned()),
+                    "height" => height = Some(value.into_owned()),
+                    _ => {}
+                }
+            }
+            if width.as_deref() != Some("256") || height.as_deref() != Some("256") {
+                return None;
+            }
+            url.set_query(Some("width=64&height=64"));
+        }
+        _ => return None,
+    }
+
+    Some(url.to_string())
+}
+
 fn supported_content_type(raw: &str) -> Option<&'static str> {
     match raw
         .split(';')
@@ -226,13 +316,17 @@ fn supported_content_type(raw: &str) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{EmbeddedArtworkBatch, supported_content_type, trusted_artwork_url};
+    use std::{cell::RefCell, collections::HashMap, collections::HashSet, sync::Arc};
+
+    use super::{
+        EmbeddedArtworkBatch, backdrop_thumbnail_url, supported_content_type, trusted_artwork_url,
+    };
 
     #[test]
     fn only_known_https_artwork_origins_are_allowed() {
         assert!(trusted_artwork_url("https://cdn.discordapp.com/app-assets/123/456.png").is_some());
         assert!(
-            trusted_artwork_url("https://cdn.discordapp.com/app-icons/123/abcdef.png?size=512")
+            trusted_artwork_url("https://cdn.discordapp.com/app-icons/123/abcdef.png?size=256")
                 .is_some()
         );
         assert!(
@@ -267,6 +361,59 @@ mod tests {
         assert!(
             trusted_artwork_url("https://cdn.discordapp.com:8443/app-assets/1/2.png").is_none()
         );
+    }
+
+    #[test]
+    fn derives_tiny_backdrops_only_for_large_discord_activity_art() {
+        assert_eq!(
+            backdrop_thumbnail_url("https://cdn.discordapp.com/app-assets/123/456.png?size=256")
+                .as_deref(),
+            Some("https://cdn.discordapp.com/app-assets/123/456.png?size=64")
+        );
+        assert_eq!(
+            backdrop_thumbnail_url(
+                "https://media.discordapp.net/external/hash/https/example.invalid/icon.png?width=256&height=256"
+            )
+            .as_deref(),
+            Some(
+                "https://media.discordapp.net/external/hash/https/example.invalid/icon.png?width=64&height=64"
+            )
+        );
+        assert!(
+            backdrop_thumbnail_url("https://cdn.discordapp.com/app-assets/123/456.png?size=64")
+                .is_none()
+        );
+        assert!(
+            backdrop_thumbnail_url("https://cdn.discordapp.com/avatars/123/hash.webp?size=256")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn large_activity_art_alternates_thumbnail_then_foreground() {
+        let url = "https://cdn.discordapp.com/app-assets/123/456.png?size=256".to_owned();
+        let mut images = HashMap::new();
+        images.insert(
+            url.clone(),
+            Arc::<str>::from("data:image/png;base64,foreground"),
+        );
+        let mut backdrops = HashMap::new();
+        backdrops.insert(
+            url.clone(),
+            Arc::<str>::from("data:image/png;base64,backdrop"),
+        );
+        let batch = EmbeddedArtworkBatch {
+            complete: true,
+            images,
+            backdrop_urls: HashSet::from([url.clone()]),
+            backdrops,
+            href_counts: RefCell::new(HashMap::new()),
+        };
+
+        assert_eq!(batch.href(&url), Some("data:image/png;base64,backdrop"));
+        assert_eq!(batch.href(&url), Some("data:image/png;base64,foreground"));
+        assert_eq!(batch.href(&url), Some("data:image/png;base64,backdrop"));
+        assert_eq!(batch.href(&url), Some("data:image/png;base64,foreground"));
     }
 
     #[test]
