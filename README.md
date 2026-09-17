@@ -79,12 +79,12 @@ I don't treat a long technology list as an expertise score. I care more about un
 ### 🔗 Connect With Me
 
 <p align="center">
-  <a href="https://discord.com/users/984085171408080897" title="Discord"><img src="https://raw.githubusercontent.com/Herzchens/profile-materials/main/assets/social/discord.svg" width="48" height="48" alt="Discord"></a>&nbsp;&nbsp;
-  <a href="https://www.tiktok.com/@itzherzchen" title="TikTok"><img src="https://raw.githubusercontent.com/Herzchens/profile-materials/main/assets/social/tiktok.svg" width="48" height="48" alt="TikTok"></a>&nbsp;&nbsp;
-  <a href="https://web.facebook.com/itztli.herzchen/" title="Facebook"><img src="https://raw.githubusercontent.com/Herzchens/profile-materials/main/assets/social/facebook.svg" width="48" height="48" alt="Facebook"></a>&nbsp;&nbsp;
-  <a href="https://steamcommunity.com/profiles/76561198773090886" title="Steam"><img src="https://raw.githubusercontent.com/Herzchens/profile-materials/main/assets/social/steam.svg" width="48" height="48" alt="Steam"></a>&nbsp;&nbsp;
-  <a href="https://open.spotify.com/user/31t5yp5xot6ttmhlwefjaxq7qukm" title="Spotify"><img src="https://raw.githubusercontent.com/Herzchens/profile-materials/main/assets/social/spotify.svg" width="48" height="48" alt="Spotify"></a>&nbsp;&nbsp;
-  <a href="https://www.paypal.com/paypalme/itzherzchen" title="PayPal"><img src="https://raw.githubusercontent.com/Herzchens/profile-materials/main/assets/social/paypal.svg" width="48" height="48" alt="PayPal"></a>
+  <a href="https://discord.com/users/984085171408080897" title="Discord"><img src="./assets/social/discord.svg" width="48" height="48" alt="Discord"></a>&nbsp;&nbsp;
+  <a href="https://www.tiktok.com/@itzherzchen" title="TikTok"><img src="./assets/social/tiktok.svg" width="48" height="48" alt="TikTok"></a>&nbsp;&nbsp;
+  <a href="https://web.facebook.com/itztli.herzchen/" title="Facebook"><img src="./assets/social/facebook.svg" width="48" height="48" alt="Facebook"></a>&nbsp;&nbsp;
+  <a href="https://steamcommunity.com/profiles/76561198773090886" title="Steam"><img src="./assets/social/steam.svg" width="48" height="48" alt="Steam"></a>&nbsp;&nbsp;
+  <a href="https://open.spotify.com/user/31t5yp5xot6ttmhlwefjaxq7qukm" title="Spotify"><img src="./assets/social/spotify.svg" width="48" height="48" alt="Spotify"></a>&nbsp;&nbsp;
+  <a href="https://www.paypal.com/paypalme/itzherzchen" title="PayPal"><img src="./assets/social/paypal.svg" width="48" height="48" alt="PayPal"></a>
 </p>
 
 <p align="center">
