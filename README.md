@@ -76,11 +76,21 @@ Common pieces in my projects include **PostgreSQL, Tokio, Serenity / Poise, Song
 
 I don't treat a long technology list as an expertise score. I care more about understanding the problem, choosing the right constraints, and being able to explain why the resulting system behaves the way it does.
 
-## Get in touch
+### 🔗 Connect With Me
 
-Discord is the best place to reach me: **[open my Discord profile](https://discord.com/users/984085171408080897)**.
+<p align="center">
+  <a href="https://discord.com/users/984085171408080897" title="Discord"><img src="https://raw.githubusercontent.com/Herzchens/profile-materials/main/assets/social/discord.svg" width="48" height="48" alt="Discord"></a>&nbsp;&nbsp;
+  <a href="https://www.tiktok.com/@itzherzchen" title="TikTok"><img src="https://raw.githubusercontent.com/Herzchens/profile-materials/main/assets/social/tiktok.svg" width="48" height="48" alt="TikTok"></a>&nbsp;&nbsp;
+  <a href="https://web.facebook.com/itztli.herzchen/" title="Facebook"><img src="https://raw.githubusercontent.com/Herzchens/profile-materials/main/assets/social/facebook.svg" width="48" height="48" alt="Facebook"></a>&nbsp;&nbsp;
+  <a href="https://steamcommunity.com/profiles/76561198773090886" title="Steam"><img src="https://raw.githubusercontent.com/Herzchens/profile-materials/main/assets/social/steam.svg" width="48" height="48" alt="Steam"></a>&nbsp;&nbsp;
+  <a href="https://open.spotify.com/user/31t5yp5xot6ttmhlwefjaxq7qukm" title="Spotify"><img src="https://raw.githubusercontent.com/Herzchens/profile-materials/main/assets/social/spotify.svg" width="48" height="48" alt="Spotify"></a>&nbsp;&nbsp;
+  <a href="https://www.paypal.com/paypalme/itzherzchen" title="PayPal"><img src="https://raw.githubusercontent.com/Herzchens/profile-materials/main/assets/social/paypal.svg" width="48" height="48" alt="PayPal"></a>
+</p>
 
-I'm happy to talk about software, open source, weird edge cases, games, or cats.
+<p align="center">
+💛 Feeling generous?
+<a href="https://www.paypal.com/paypalme/itzherzchen">Support me and my work on PayPal</a>
+</p>
 
 <p align="center">
   <sub>
