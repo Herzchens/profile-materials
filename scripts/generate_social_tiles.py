@@ -23,8 +23,8 @@ ICONS = {
         "size": 31,
     },
     "spotify": {
-        "url": "https://api.iconify.design/logos/spotify.svg",
-        "size": 31,
+        "url": "https://api.iconify.design/simple-icons/spotify.svg?color=%231ED760",
+        "size": 32,
     },
     "paypal": {
         "url": "https://api.iconify.design/logos/paypal.svg",
