@@ -18,7 +18,7 @@
 
 <p align="center">
   <img
-    src="https://profile.tailed8451.ts.net/v1/svg/github-streak.svg?compat=campfire-v12"
+    src="https://profile.tailed8451.ts.net/v1/svg/github-streak.svg?compat=campfire-v13"
     alt="GitHub contribution streak"
     width="100%"
   />
