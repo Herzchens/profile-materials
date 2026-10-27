@@ -4,7 +4,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 use super::stats::{GitHubSnapshot, is_stale};
 
-const SVG_REVISION: u8 = 12;
+const SVG_REVISION: u8 = 13;
 const TITLE: &str = "#70A5FD";
 const ICON: &str = "#BF91F3";
 const TEXT: &str = "#38BDAE";
@@ -277,13 +277,13 @@ fn render_streak(snapshot: &GitHubSnapshot, stale: bool) -> String {
     } else {
         "out"
     };
+    render_campfire(&mut body, state);
+
     let _ = write!(
         body,
         r##"<image data-mascot-state="{mascot_state}" x="222" y="55" width="292" height="292" href="{}" preserveAspectRatio="xMidYMid meet" opacity=".98"/>"##,
         escape_xml(mascot_uri)
     );
-
-    render_campfire(&mut body, state);
     let current_class = if state == CampfireState::Lit {
         "current-number current-number-lit"
     } else {
@@ -566,6 +566,12 @@ mod tests {
         assert!(card.body().contains("scale(1.22 1)"));
         assert!(card.body().contains("data:image/webp;base64,"));
         assert!(card.body().contains("data-mascot-state=\"lit\""));
+        let campfire_pos = card.body().find("id=\"campfire-lit\"").expect("lit campfire");
+        let mascot_pos = card
+            .body()
+            .find("data-mascot-state=\"lit\"")
+            .expect("lit mascot");
+        assert!(campfire_pos < mascot_pos, "campfire must render behind mascot");
         assert!(
             card.body()
                 .contains("x=\"222\" y=\"55\" width=\"292\" height=\"292\"")
